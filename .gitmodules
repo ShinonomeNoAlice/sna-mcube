@@ -1,0 +1,6 @@
+[submodule "submodules/musikcube"]
+	path = submodules/musikcube
+	url = https://github.com/clangen/musikcube.git
+[submodule "submodules/soxr"]
+	path = submodules/soxr
+	url = https://github.com/chirlu/soxr.git

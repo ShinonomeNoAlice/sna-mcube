@@ -1,0 +1,16 @@
+# Visual Studio build outputs
+build/
+bin/
+obj32/
+obj64/
+x64/
+Win32/
+Debug/
+Release/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
