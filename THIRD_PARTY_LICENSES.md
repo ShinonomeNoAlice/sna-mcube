@@ -1,0 +1,1 @@
+- `soxr` - GNU LGPL v2.1 - <https://github.com/chirlu/soxr> - commit 945b592b70470e29f917f4de89b4281fbbd540c0 (submodule submodules/soxr).

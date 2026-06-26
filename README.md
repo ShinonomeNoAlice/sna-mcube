@@ -44,3 +44,15 @@ Then copy/symlink:
 - [ ] Add checks for WASAPI EM to be Windows-only
 - [ ] Polish the WASAPI EM tester
 - [x] Add things for my use case later
+
+## License
+
+All code in this repository is licensed under MIT (see [LICENSE](https://github.com//ShinonomeNoAlice/sna-mcube/blob/master/LICENSE).
+
+WASAPI EM implementation links dynamically against the SoX resampler library "soxr", which is licensed under the GNU Lesser General Public License v2.1 (see COPYING-LGPLv2.1 and SOXR-LICENSE.txt). The soxr submodule is pinned to commit `945b592b70470e29f917f4de89b4281fbbd540c0` (submodules/soxr). To fetch the submodule locally:
+
+```sh
+  git clone --recursive https://github.com/ShinonomeNoAlice/sna-mcube
+  # or, if already cloned:
+  git submodule update --init --recursive
+```
