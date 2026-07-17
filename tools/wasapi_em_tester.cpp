@@ -472,7 +472,7 @@ std::vector<FormatDef> GenerateFormats(bool runAdvanced) {
 }
 
 void PrintHelp() {
-    std::cout << "Usage: test_wasapi [options]\n\n";
+    std::cout << "Usage: wasapi_em_tester [options]\n\n";
     std::cout << "Options:\n";
     std::cout << "  -h, --help             Show this help message and exit\n";
     std::cout << "  -l, --list-devices     List all active audio render devices and exit\n";

@@ -33,7 +33,7 @@ $ msbuild musikcube-plugins.sln /p:Configuration=Release /p:Platform=x64
 The compiled output will be generated under the `build/` directory:
 - WASAPI Exclusive Mode Plugin: `build\bin\x64\Release\plugins\wasapiexclusiveout.dll`
 - SoX Resampler Shared Library: `build\bin\x64\Release\soxr.dll`
-- WASAPI Exclusive Mode Tester: `build\bin\x64\Release\tools\test_wasapi.exe`
+- WASAPI Exclusive Mode Tester: `build\bin\x64\Release\tools\wasapi_em_tester.exe`
 
 Then copy/symlink:
 1. `wasapiexclusiveout.dll` into your `musikcube`'s `plugins/` folder.
