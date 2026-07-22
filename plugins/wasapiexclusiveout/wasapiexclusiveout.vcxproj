@@ -92,7 +92,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>../../submodules/tomlplusplus;../../submodules/vst3sdk;../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;SOXR_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -116,7 +116,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>../../submodules/tomlplusplus;../../submodules/vst3sdk;../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;SOXR_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
@@ -140,7 +140,7 @@
     <ClCompile>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>../../submodules/tomlplusplus;../../submodules/vst3sdk;../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;SOXR_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>None</DebugInformationFormat>
@@ -170,7 +170,7 @@
     <ClCompile>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>../../submodules/tomlplusplus;../../submodules/vst3sdk;../../submodules/musikcube/src;../../submodules/soxr/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;SOXR_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>None</DebugInformationFormat>
@@ -198,9 +198,30 @@
   <ItemGroup>
     <ClCompile Include="src\WasapiExclusiveOut.cpp" />
     <ClCompile Include="src\wasapiexclusiveout_plugin.cpp" />
+    <ClCompile Include="src\VstHost.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\module.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\module_win32.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\hostclasses.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\plugprovider.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\connectionproxy.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\processdata.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\parameterchanges.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\eventlist.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\hosting\pluginterfacesupport.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\utility\stringconvert.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\common\commonstringconvert.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\common\threadchecker_win32.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\pluginterfaces\base\funknown.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\pluginterfaces\base\coreiids.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\vstinitiids.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\common\commoniids.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\public.sdk\source\vst\vstpresetfile.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\base\source\fbuffer.cpp" />
+    <ClCompile Include="..\..\submodules\vst3sdk\base\source\fstring.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\WasapiExclusiveOut.h" />
+    <ClInclude Include="src\VstHost.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\3rdparty\soxr\soxr.vcxproj">

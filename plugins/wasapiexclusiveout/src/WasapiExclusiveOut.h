@@ -49,6 +49,7 @@
 using namespace musik::core::sdk;
 
 class NotificationClient;
+class VstChain;
 
 class WasapiExclusiveOut : public IOutput {
     public:
@@ -109,8 +110,10 @@ class WasapiExclusiveOut : public IOutput {
         double latency;
         int rate;
         int configuredSampleRate;
+        float headroomMultiplier;
         void* resampler;
         std::vector<float> resampleBuffer;
         bool deviceChanged;
+        std::unique_ptr<VstChain> vstChain;
         std::recursive_mutex stateMutex;
 };

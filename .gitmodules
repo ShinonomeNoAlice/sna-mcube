@@ -4,3 +4,9 @@
 [submodule "submodules/soxr"]
 	path = submodules/soxr
 	url = https://github.com/chirlu/soxr.git
+[submodule "vendor/vst3sdk"]
+	path = submodules/vst3sdk
+	url = https://github.com/steinbergmedia/vst3sdk.git
+[submodule "vendor/tomlplusplus"]
+	path = submodules/tomlplusplus
+	url = https://github.com/marzer/tomlplusplus.git

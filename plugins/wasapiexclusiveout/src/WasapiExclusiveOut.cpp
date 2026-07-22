@@ -34,10 +34,12 @@
 
 #include "WasapiExclusiveOut.h"
 #include <soxr.h>
+#include <cmath>
 #include <musikcore/sdk/constants.h>
 #include <musikcore/sdk/IPreferences.h>
 #include <musikcore/sdk/ISchema.h>
 #include <musikcore/sdk/IDebug.h>
+#include "VstHost.h"
 #include <AudioSessionTypes.h>
 #include <Functiondiscoverykeys_devpkey.h>
 #include <iostream>
@@ -60,11 +62,14 @@
 #define PREF_ENABLE_TRACE_LOGGING "enable_trace_logging"
 #define PREF_SOXR_OVERSAMPLING "soxr_oversampling"
 #define PREF_SOXR_PRESET "soxr_preset"
+#define PREF_SOXR_HEADROOM_DB "soxr_headroom_db"
 #define PREF_SOXR_CUSTOM_PRECISION "soxr_custom_precision_bits"
 #define PREF_SOXR_CUSTOM_PHASE "soxr_custom_phase_response_pct"
 #define PREF_SOXR_CUSTOM_PASSBAND_END "soxr_custom_passband_end"
 #define PREF_SOXR_CUSTOM_STOPBAND_BEGIN "soxr_custom_stopband_begin"
 #define PREF_SOXR_CUSTOM_DOUBLE_PRECISION "soxr_custom_double_precision"
+#define PREF_VST_ENABLED "vst_enabled"
+
 
 using Lock = std::unique_lock<std::recursive_mutex>;
 musik::core::sdk::IPreferences* prefs = nullptr;
@@ -175,6 +180,17 @@ static std::string getDeviceId() {
     return getPreferenceString<std::string>(prefs, PREF_DEVICE_ID, "");
 }
 
+static std::string getVstConfigPath() {
+    std::string path = "";
+    char* appdata = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&appdata, &len, "APPDATA") == 0 && appdata != nullptr) {
+        path = std::string(appdata) + "\\musikcube\\wasapiexclusive_vst.toml";
+        free(appdata);
+    }
+    return path;
+}
+
 class WasapiExclusiveDevice : public musik::core::sdk::IDevice {
     public:
         WasapiExclusiveDevice(const std::string& id, const std::string& name) {
@@ -218,7 +234,7 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
 
     // 3. Standard WASAPI settings
     schema->AddBool(PREF_ENDPOINT_ROUTING, false);
-    schema->AddDouble(PREF_BUFFER_LENGTH_SECONDS, 1.0, 2, 0.25, 5.0);
+    schema->AddDouble(PREF_BUFFER_LENGTH_SECONDS, 1.0, 2, 0.05, 5.0);
     schema->AddBool(PREF_ALLOW_DECODER_RESAMPLING, false);
     schema->AddInt(PREF_DAC_SETTLING_MS, 0, 0, 5000);
     schema->AddBool(PREF_RELEASE_ON_PAUSE, false);
@@ -229,6 +245,7 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     // 5. Soxr general settings
     schema->AddEnum(PREF_SOXR_OVERSAMPLING, { "No Scaling", "2x", "4x", "8x", "16x", "Max (Integer Scaling)", "Max (Highest Supported)" }, "No Scaling");
     schema->AddEnum(PREF_SOXR_PRESET, { "Quick", "Low", "Medium", "High (Default)", "Very High", "Custom" }, "High (Default)");
+    schema->AddDouble(PREF_SOXR_HEADROOM_DB, 0.0, 1, -12.0, 0.0);
 
     // 6. Custom Separator
     schema->AddEnum("--- Custom soxr settings (\"Custom\" preset) ---", { "---" }, "---");
@@ -239,6 +256,10 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     schema->AddDouble(PREF_SOXR_CUSTOM_PASSBAND_END, 0.913, 3, 0.5, 0.99);
     schema->AddDouble(PREF_SOXR_CUSTOM_STOPBAND_BEGIN, 1.0, 3, 1.0, 1.2);
     schema->AddBool(PREF_SOXR_CUSTOM_DOUBLE_PRECISION, false);
+
+    // 8. VST Host Settings
+    schema->AddEnum("--- VST3 Host ---", { "---" }, "---");
+    schema->AddBool(PREF_VST_ENABLED, true);
 
     return schema;
 }
@@ -350,9 +371,11 @@ WasapiExclusiveOut::WasapiExclusiveOut()
 , configuredSampleRate(0)
 , resampler(nullptr)
 , deviceChanged(false)
-, volume(1.0f) {
+, volume(1.0f)
+, headroomMultiplier(1.0f) {
     ZeroMemory(&waveFormat, sizeof(WAVEFORMATEXTENSIBLE));
     timeBeginPeriod(1);
+    
 }
 
 WasapiExclusiveOut::~WasapiExclusiveOut() {
@@ -513,12 +536,30 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         framesToWrite = (UINT32)odone;
         samples = framesToWrite * channels;
     }
+    
+    // Process VST chain after upsampling/format conversion
+    bool vstEnabled = ::prefs && prefs->GetBool(PREF_VST_ENABLED, true);
+    if (vstEnabled) {
+        if (!this->vstChain) {
+            std::string tomlPath = getVstConfigPath();
+            this->vstChain = std::make_unique<VstChain>(tomlPath);
+        }
+        this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
+        this->vstChain->Process(src, framesToWrite, buffer->Channels());
+    } else {
+        if (this->vstChain) {
+            this->vstChain.reset();
+        }
+    }
 
     if (availableFrames >= framesToWrite) {
         BYTE *data = nullptr;
         result = this->renderClient->GetBuffer(framesToWrite, &data);
         if (result == S_OK) {
             float vol = (float)this->volume;
+            if (this->resampler) {
+                vol *= this->headroomMultiplier;
+            }
 
             if (this->targetFormatType == FormatFloat32) {
                 float* dst = (float*) data;
@@ -1400,6 +1441,9 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
             Sleep(10);
         }
     }
+
+    double headroomDb = ::prefs ? ::prefs->GetDouble(PREF_SOXR_HEADROOM_DB, 0.0) : 0.0;
+    this->headroomMultiplier = (float)std::pow(10.0, headroomDb / 20.0);
 
     return true;
 }
