@@ -60,6 +60,7 @@
 #define PREF_DAC_SETTLING_MS "dac_settling_ms"
 #define PREF_RELEASE_ON_PAUSE "release_device_on_pause"
 #define PREF_ENABLE_TRACE_LOGGING "enable_trace_logging"
+#define PREF_HEADROOM_DB "headroom_db"
 #define PREF_SOXR_OVERSAMPLING "soxr_oversampling"
 #define PREF_SOXR_PRESET "soxr_preset"
 #define PREF_SOXR_HEADROOM_DB "soxr_headroom_db"
@@ -150,9 +151,40 @@ static void LogDebug(const std::string& message) {
 }
 
 static inline std::string HresultToString(HRESULT hr) {
-    char buf[32];
-    sprintf_s(buf, "0x%08X", hr);
-    return std::string(buf);
+    switch (hr) {
+        case S_OK: return "0x00000000 (S_OK)";
+        case S_FALSE: return "0x00000001 (S_FALSE)";
+        case AUDCLNT_E_NOT_INITIALIZED: return "0x88890001 (AUDCLNT_E_NOT_INITIALIZED)";
+        case AUDCLNT_E_ALREADY_INITIALIZED: return "0x88890002 (AUDCLNT_E_ALREADY_INITIALIZED)";
+        case AUDCLNT_E_WRONG_ENDPOINT_TYPE: return "0x88890003 (AUDCLNT_E_WRONG_ENDPOINT_TYPE)";
+        case AUDCLNT_E_DEVICE_INVALIDATED: return "0x88890004 (AUDCLNT_E_DEVICE_INVALIDATED)";
+        case AUDCLNT_E_NOT_STOPPED: return "0x88890005 (AUDCLNT_E_NOT_STOPPED)";
+        case AUDCLNT_E_BUFFER_TOO_LARGE: return "0x88890006 (AUDCLNT_E_BUFFER_TOO_LARGE)";
+        case AUDCLNT_E_OUT_OF_ORDER: return "0x88890007 (AUDCLNT_E_OUT_OF_ORDER)";
+        case AUDCLNT_E_UNSUPPORTED_FORMAT: return "0x88890008 (AUDCLNT_E_UNSUPPORTED_FORMAT)";
+        case AUDCLNT_E_INVALID_SIZE: return "0x88890009 (AUDCLNT_E_INVALID_SIZE)";
+        case AUDCLNT_E_DEVICE_IN_USE: return "0x8889000A (AUDCLNT_E_DEVICE_IN_USE)";
+        case AUDCLNT_E_BUFFER_OPERATION_PENDING: return "0x8889000B (AUDCLNT_E_BUFFER_OPERATION_PENDING)";
+        case AUDCLNT_E_THREAD_NOT_REGISTERED: return "0x8889000C (AUDCLNT_E_THREAD_NOT_REGISTERED)";
+        case AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED: return "0x8889000E (AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED)";
+        case AUDCLNT_E_ENDPOINT_CREATE_FAILED: return "0x8889000F (AUDCLNT_E_ENDPOINT_CREATE_FAILED)";
+        case AUDCLNT_E_SERVICE_NOT_RUNNING: return "0x88890010 (AUDCLNT_E_SERVICE_NOT_RUNNING)";
+        case AUDCLNT_E_EVENTHANDLE_NOT_SET: return "0x88890011 (AUDCLNT_E_EVENTHANDLE_NOT_SET)";
+        case AUDCLNT_E_EXCLUSIVE_MODE_ONLY: return "0x88890012 (AUDCLNT_E_EXCLUSIVE_MODE_ONLY)";
+        case AUDCLNT_E_BUFDURATION_PERIOD_NOT_EQUAL: return "0x88890013 (AUDCLNT_E_BUFDURATION_PERIOD_NOT_EQUAL)";
+        case AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED: return "0x88890014 (AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED)";
+        case AUDCLNT_E_BUFFER_ERROR: return "0x88890018 (AUDCLNT_E_BUFFER_ERROR)";
+        case AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED: return "0x88890019 (AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED)";
+        case E_INVALIDARG: return "0x80070057 (E_INVALIDARG)";
+        case E_POINTER: return "0x80004003 (E_POINTER)";
+        case E_OUTOFMEMORY: return "0x8007000E (E_OUTOFMEMORY)";
+        case E_FAIL: return "0x80004005 (E_FAIL)";
+        default: {
+            char buf[32];
+            sprintf_s(buf, "0x%08X", hr);
+            return std::string(buf);
+        }
+    }
 }
 
 static inline std::string GuidToString(GUID guid) {
@@ -162,6 +194,29 @@ static inline std::string GuidToString(GUID guid) {
         guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
         guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]);
     return std::string(buf);
+}
+
+static inline std::string SubFormatToString(GUID guid) {
+    if (guid == KSDATAFORMAT_SUBTYPE_PCM) return "PCM";
+    if (guid == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) return "IEEE Float";
+    return GuidToString(guid);
+}
+
+static inline std::string FormatHns(REFERENCE_TIME hns) {
+    char buf[64];
+    sprintf_s(buf, "%lld hns (%.1f ms)", (long long)hns, hns / 10000.0);
+    return std::string(buf);
+}
+
+static inline std::string FormatTypeName(WasapiExclusiveOut::TargetFormatType type) {
+    switch (type) {
+        case WasapiExclusiveOut::FormatFloat32: return "IEEE Float 32";
+        case WasapiExclusiveOut::FormatPCM32: return "PCM 32";
+        case WasapiExclusiveOut::FormatPCM24In32: return "PCM 24-in-32";
+        case WasapiExclusiveOut::FormatPCM24Packed: return "PCM 24 Packed";
+        case WasapiExclusiveOut::FormatPCM16: return "PCM 16";
+        default: return "Unknown";
+    }
 }
 
 static inline std::string utf16to8(const wchar_t* utf16) {
@@ -235,6 +290,7 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     // 3. Standard WASAPI settings
     schema->AddBool(PREF_ENDPOINT_ROUTING, false);
     schema->AddDouble(PREF_BUFFER_LENGTH_SECONDS, 1.0, 2, 0.05, 5.0);
+    schema->AddDouble(PREF_HEADROOM_DB, 0.0, 1, -12.0, 0.0);
     schema->AddBool(PREF_ALLOW_DECODER_RESAMPLING, false);
     schema->AddInt(PREF_DAC_SETTLING_MS, 0, 0, 5000);
     schema->AddBool(PREF_RELEASE_ON_PAUSE, false);
@@ -245,7 +301,6 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     // 5. Soxr general settings
     schema->AddEnum(PREF_SOXR_OVERSAMPLING, { "No Scaling", "2x", "4x", "8x", "16x", "Max (Integer Scaling)", "Max (Highest Supported)" }, "No Scaling");
     schema->AddEnum(PREF_SOXR_PRESET, { "Quick", "Low", "Medium", "High (Default)", "Very High", "Custom" }, "High (Default)");
-    schema->AddDouble(PREF_SOXR_HEADROOM_DB, 0.0, 1, -12.0, 0.0);
 
     // 6. Custom Separator
     schema->AddEnum("--- Custom soxr settings (\"Custom\" preset) ---", { "---" }, "---");
@@ -369,13 +424,14 @@ WasapiExclusiveOut::WasapiExclusiveOut()
 , state(StateStopped)
 , latency(0)
 , configuredSampleRate(0)
+, configuredChannels(0)
+, configuredInputChannels(0)
 , resampler(nullptr)
 , deviceChanged(false)
 , volume(1.0f)
 , headroomMultiplier(1.0f) {
     ZeroMemory(&waveFormat, sizeof(WAVEFORMATEXTENSIBLE));
     timeBeginPeriod(1);
-    
 }
 
 WasapiExclusiveOut::~WasapiExclusiveOut() {
@@ -492,7 +548,9 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         availableFrames = (this->outputBufferFrames - frameOffset);
         if (availableFrames < expectedOutputFrames) {
             UINT32 delta = expectedOutputFrames - availableFrames;
-            return (OutputState) ((delta * 1000) / this->configuredSampleRate);
+            UINT32 sleepMs = (UINT32) std::ceil((double)delta * 1000.0 / (double)this->configuredSampleRate);
+            if (sleepMs < 1) sleepMs = 1;
+            return (OutputState) sleepMs;
         }
     } else {
         return OutputState::FormatError;
@@ -537,6 +595,26 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         samples = framesToWrite * channels;
     }
     
+    UINT32 inChannels = (UINT32)buffer->Channels();
+    UINT32 outChannels = (UINT32)this->configuredChannels;
+    UINT32 currentChannels = inChannels;
+
+    if (outChannels == 2 && inChannels == 1) {
+        UINT32 neededSize = framesToWrite * 2;
+        if (this->stereoBuffer.size() < neededSize) {
+            this->stereoBuffer.resize(neededSize);
+        }
+        float* dstStereo = this->stereoBuffer.data();
+        for (UINT32 f = 0; f < framesToWrite; ++f) {
+            float s = src[f];
+            dstStereo[2 * f] = s;
+            dstStereo[2 * f + 1] = s;
+        }
+        src = this->stereoBuffer.data();
+        currentChannels = 2;
+        samples = framesToWrite * 2;
+    }
+
     // Process VST chain after upsampling/format conversion
     bool vstEnabled = ::prefs && prefs->GetBool(PREF_VST_ENABLED, true);
     if (vstEnabled) {
@@ -545,7 +623,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             this->vstChain = std::make_unique<VstChain>(tomlPath);
         }
         this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
-        this->vstChain->Process(src, framesToWrite, buffer->Channels());
+        this->vstChain->Process(src, framesToWrite, currentChannels);
     } else {
         if (this->vstChain) {
             this->vstChain.reset();
@@ -556,10 +634,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         BYTE *data = nullptr;
         result = this->renderClient->GetBuffer(framesToWrite, &data);
         if (result == S_OK) {
-            float vol = (float)this->volume;
-            if (this->resampler) {
-                vol *= this->headroomMultiplier;
-            }
+            float vol = (float)this->volume * this->headroomMultiplier;
 
             if (this->targetFormatType == FormatFloat32) {
                 float* dst = (float*) data;
@@ -570,28 +645,28 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             else if (this->targetFormatType == FormatPCM32) {
                 int32_t* dst = (int32_t*) data;
                 for (UINT32 i = 0; i < samples; ++i) {
-                    float s = src[i] * vol;
-                    if (s > 1.0f) s = 1.0f;
-                    else if (s < -1.0f) s = -1.0f;
+                    double s = (double)src[i] * (double)vol;
+                    if (s > 1.0) s = 1.0;
+                    else if (s < -1.0) s = -1.0;
                     dst[i] = (int32_t)(s * 2147483647.0);
                 }
             }
             else if (this->targetFormatType == FormatPCM24In32) {
                 int32_t* dst = (int32_t*) data;
                 for (UINT32 i = 0; i < samples; ++i) {
-                    float s = src[i] * vol;
-                    if (s > 1.0f) s = 1.0f;
-                    else if (s < -1.0f) s = -1.0f;
-                    dst[i] = ((int32_t)(s * 8388607.0f)) << 8;
+                    double s = (double)src[i] * (double)vol;
+                    if (s > 1.0) s = 1.0;
+                    else if (s < -1.0) s = -1.0;
+                    dst[i] = ((int32_t)(s * 8388607.0)) << 8;
                 }
             }
             else if (this->targetFormatType == FormatPCM24Packed) {
                 uint8_t* dst = (uint8_t*) data;
                 for (UINT32 i = 0; i < samples; ++i) {
-                    float s = src[i] * vol;
-                    if (s > 1.0f) s = 1.0f;
-                    else if (s < -1.0f) s = -1.0f;
-                    int32_t val = (int32_t)(s * 8388607.0f);
+                    double s = (double)src[i] * (double)vol;
+                    if (s > 1.0) s = 1.0;
+                    else if (s < -1.0) s = -1.0;
+                    int32_t val = (int32_t)(s * 8388607.0);
                     dst[3 * i] = val & 0xFF;
                     dst[3 * i + 1] = (val >> 8) & 0xFF;
                     dst[3 * i + 2] = (val >> 16) & 0xFF;
@@ -600,10 +675,10 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             else if (this->targetFormatType == FormatPCM16) {
                 int16_t* dst = (int16_t*) data;
                 for (UINT32 i = 0; i < samples; ++i) {
-                    float s = src[i] * vol;
-                    if (s > 1.0f) s = 1.0f;
-                    else if (s < -1.0f) s = -1.0f;
-                    dst[i] = (int16_t)(s * 32767.0f);
+                    double s = (double)src[i] * (double)vol;
+                    if (s > 1.0) s = 1.0;
+                    else if (s < -1.0) s = -1.0;
+                    dst[i] = (int16_t)(s * 32767.0);
                 }
             }
 
@@ -623,6 +698,8 @@ void WasapiExclusiveOut::Reset() {
         soxr_delete((soxr_t)this->resampler);
         this->resampler = nullptr;
     }
+    this->resampleBuffer.clear();
+    this->stereoBuffer.clear();
 
     if (this->audioClock) {
         this->audioClock->Release();
@@ -646,6 +723,12 @@ void WasapiExclusiveOut::Reset() {
     this->renderClient = nullptr;
     this->audioClient = nullptr;
     this->device = nullptr;
+
+    this->configuredSampleRate = 0;
+    this->configuredChannels = 0;
+    this->configuredInputChannels = 0;
+    this->rate = 0;
+    this->latency = 0;
 
     ZeroMemory(&waveFormat, sizeof(WAVEFORMATEXTENSIBLE));
 }
@@ -881,7 +964,7 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
              ", nSamplesPerSec=" + std::to_string(buffer->SampleRate()));
 
     if (this->audioClient &&
-        waveFormat.Format.nChannels == buffer->Channels() &&
+        this->configuredInputChannels == buffer->Channels() &&
         this->rate == buffer->SampleRate())
     {
         LogDebug("Configure early return (already configured)");
@@ -893,9 +976,11 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     TargetFormatType cachedFormatType = this->targetFormatType;
     int cachedInputRate = this->rate;
     int cachedConfiguredRate = this->configuredSampleRate;
+    int cachedConfiguredChannels = this->configuredChannels;
     bool canUseCache = (cachedInputRate == buffer->SampleRate() && 
-                        cachedWf.Format.nChannels == buffer->Channels() && 
-                        cachedWf.Format.nSamplesPerSec > 0);
+                        cachedWf.Format.nChannels == this->configuredChannels && 
+                        cachedWf.Format.nSamplesPerSec > 0 &&
+                        cachedConfiguredChannels > 0);
 
     this->Reset();
     this->InitializeAudioClient();
@@ -909,46 +994,48 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     WAVEFORMATEX* mixFormat = nullptr;
     if (this->audioClient->GetMixFormat(&mixFormat) == S_OK) {
         mixFormatSampleRate = mixFormat->nSamplesPerSec;
-        LogInfo("GetMixFormat returned: wFormatTag=" + std::to_string(mixFormat->wFormatTag) +
-                ", nChannels=" + std::to_string(mixFormat->nChannels) +
-                ", nSamplesPerSec=" + std::to_string(mixFormat->nSamplesPerSec) +
-                ", wBitsPerSample=" + std::to_string(mixFormat->wBitsPerSample) +
-                ", cbSize=" + std::to_string(mixFormat->cbSize));
-        
+        std::string subfmtStr = "PCM";
+        WORD validBits = mixFormat->wBitsPerSample;
+
         if (mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
             WAVEFORMATEXTENSIBLE* mixExt = (WAVEFORMATEXTENSIBLE*)mixFormat;
-            LogInfo("GetMixFormat Extensible details: dwChannelMask=" + std::to_string(mixExt->dwChannelMask) +
-                     ", wValidBitsPerSample=" + std::to_string(mixExt->Samples.wValidBitsPerSample) +
-                     ", SubFormat=" + GuidToString(mixExt->SubFormat));
+            subfmtStr = SubFormatToString(mixExt->SubFormat);
+            validBits = mixExt->Samples.wValidBitsPerSample;
         }
+
+        std::string paramsStr = std::to_string(mixFormat->nSamplesPerSec) + " Hz, " +
+                                std::to_string(mixFormat->nChannels) + " ch, " +
+                                std::to_string(mixFormat->wBitsPerSample) + "-bit (" +
+                                subfmtStr + ", Valid: " + std::to_string(validBits) + "-bit)";
+
+        LogInfo("[Device] Windows Shared Mix Format: " + paramsStr);
 
         HRESULT testHr = this->audioClient->IsFormatSupported(
             AUDCLNT_SHAREMODE_EXCLUSIVE,
             mixFormat,
             NULL
         );
-        LogInfo("IsFormatSupported for MixFormat in Exclusive Mode returned HRESULT=" + HresultToString(testHr));
+
+        if (testHr == S_OK) {
+            LogInfo("[Device] Exclusive Mode permits Shared Mix Format parameters. (params: " + paramsStr + ")");
+        } else if (testHr == AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED) {
+            LogError("[Device] Exclusive Mode permission denied by Windows (AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED). 'Allow applications to take exclusive control of this device' is disabled in Sound Control Panel.");
+        } else if (testHr == AUDCLNT_E_UNSUPPORTED_FORMAT) {
+            LogInfo("[Device] Shared Mix Format parameters (" + paramsStr + ") are not directly supported in Exclusive Mode. Format negotiation will determine hardware supported rate/format.");
+        } else if (testHr == AUDCLNT_E_DEVICE_IN_USE) {
+            LogError("[Device] Exclusive Mode device is currently in use by another application (AUDCLNT_E_DEVICE_IN_USE).");
+        } else {
+            LogWarning("[Device] Exclusive Mode format query for Shared Mix Format returned: " + HresultToString(testHr));
+        }
 
         CoTaskMemFree(mixFormat);
     }
 
-    DWORD speakerConfig = 0;
-    switch (buffer->Channels()) {
-        case 1:
-            speakerConfig = KSAUDIO_SPEAKER_MONO;
-            break;
-        case 2:
-            speakerConfig = KSAUDIO_SPEAKER_STEREO;
-            break;
-        case 4:
-            speakerConfig = KSAUDIO_SPEAKER_QUAD;
-            break;
-        case 5:
-            speakerConfig = (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT);
-            break;
-        case 6:
-            speakerConfig = KSAUDIO_SPEAKER_5POINT1;
-            break;
+    // Determine channels to try (prefer input channel count, fallback to 2 channels if mono rejected by stereo DAC)
+    std::vector<WORD> channelsToTry;
+    channelsToTry.push_back((WORD)buffer->Channels());
+    if (buffer->Channels() != 2) {
+        channelsToTry.push_back(2);
     }
 
     // Rationale for querying device period (timing and periodicity):
@@ -960,11 +1047,11 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     REFERENCE_TIME minimumPeriod = 0;
     HRESULT result = this->audioClient->GetDevicePeriod(&defaultPeriod, &minimumPeriod);
     if (result != S_OK) {
-        LogError("GetDevicePeriod failed, HRESULT=" + HresultToString(result));
+        LogError("[Device] GetDevicePeriod failed: " + HresultToString(result));
         return false;
     }
-    LogInfo("GetDevicePeriod returned defaultPeriod=" + std::to_string(defaultPeriod) + 
-             ", minimumPeriod=" + std::to_string(minimumPeriod));
+    LogInfo("[Device] Hardware Device Period: Default = " + FormatHns(defaultPeriod) + 
+            ", Minimum = " + FormatHns(minimumPeriod));
 
     WAVEFORMATEXTENSIBLE &wf = this->waveFormat;
 
@@ -977,7 +1064,7 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     };
 
     FormatTarget targets[] = {
-        { 32, 32, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, FormatFloat32, "IEEE Float" },
+        { 32, 32, KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, FormatFloat32, "IEEE Float 32" },
         { 32, 32, KSDATAFORMAT_SUBTYPE_PCM, FormatPCM32, "PCM 32" },
         { 32, 24, KSDATAFORMAT_SUBTYPE_PCM, FormatPCM24In32, "PCM 24-in-32" },
         { 24, 24, KSDATAFORMAT_SUBTYPE_PCM, FormatPCM24Packed, "PCM 24 Packed" },
@@ -1059,9 +1146,12 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     bool initialized = false;
 
     if (canUseCache) {
-        LogInfo("Attempting quick initialization with cached format to skip negotiation...");
+        LogInfo("[Init] Attempting quick initialization with cached format (" + 
+                std::to_string(cachedConfiguredRate) + " Hz, " + FormatTypeName(cachedFormatType) + ", " +
+                std::to_string(cachedConfiguredChannels) + " ch)...");
         this->waveFormat = cachedWf;
         this->targetFormatType = cachedFormatType;
+        this->configuredChannels = cachedConfiguredChannels;
 
         for (REFERENCE_TIME periodicity : periodicityCandidates) {
             std::vector<REFERENCE_TIME> bufferCandidates;
@@ -1098,8 +1188,8 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
                     initialized = true;
                     this->configuredSampleRate = cachedConfiguredRate;
                     rateChanged = false; // Same configured rate, no clock change
-                    LogInfo("Quick initialization successful: rate=" + std::to_string(this->configuredSampleRate) + 
-                            ", format type=" + std::to_string(this->targetFormatType));
+                    LogInfo("[Init] Quick initialization succeeded: " + std::to_string(this->configuredSampleRate) + 
+                            " Hz, " + FormatTypeName(this->targetFormatType) + ", " + std::to_string(this->configuredChannels) + " ch");
                     break;
                 }
 
@@ -1124,7 +1214,8 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
                                 initialized = true;
                                 this->configuredSampleRate = cachedConfiguredRate;
                                 rateChanged = false; // Same configured rate, no clock change
-                                LogInfo("Quick initialization successful (aligned): rate=" + std::to_string(this->configuredSampleRate));
+                                LogInfo("[Init] Quick initialization succeeded (aligned): " + std::to_string(this->configuredSampleRate) +
+                                        " Hz, " + FormatTypeName(this->targetFormatType) + ", " + std::to_string(this->configuredChannels) + " ch");
                                 break;
                             }
                         }
@@ -1142,176 +1233,215 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
         }
 
         if (!initialized) {
-            LogWarning("Quick initialization failed. Falling back to full format negotiation.");
+            LogWarning("[Init] Quick initialization failed. Falling back to full format negotiation.");
             this->Reset();
             this->InitializeAudioClient();
         }
     }
 
-    for (DWORD targetRate : ratesToTry) {
-        bool formatFoundForRate = false;
-        const FormatTarget* selectedTarget = nullptr;
-        
-        for (const auto& target : targets) {
-            ZeroMemory(&wf, sizeof(WAVEFORMATEXTENSIBLE));
-            wf.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
-            wf.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-            wf.Format.nChannels = (WORD) buffer->Channels();
-            wf.Format.wBitsPerSample = target.bitsPerSample;
-            wf.Format.nSamplesPerSec = targetRate;
-            wf.Samples.wValidBitsPerSample = target.validBitsPerSample;
-            wf.Format.nBlockAlign = (wf.Format.wBitsPerSample / 8) * wf.Format.nChannels;
-            wf.Format.nAvgBytesPerSec = wf.Format.nSamplesPerSec * wf.Format.nBlockAlign;
-            wf.dwChannelMask = speakerConfig;
-            wf.SubFormat = target.subFormat;
+    if (!initialized) {
+        for (DWORD targetRate : ratesToTry) {
+            bool formatFoundForRate = false;
+            const FormatTarget* selectedTarget = nullptr;
+            
+            for (WORD channelCount : channelsToTry) {
+                DWORD speakerConfig = 0;
+                switch (channelCount) {
+                    case 1: speakerConfig = KSAUDIO_SPEAKER_MONO; break;
+                    case 2: speakerConfig = KSAUDIO_SPEAKER_STEREO; break;
+                    case 4: speakerConfig = KSAUDIO_SPEAKER_QUAD; break;
+                    case 5: speakerConfig = (SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT); break;
+                    case 6: speakerConfig = KSAUDIO_SPEAKER_5POINT1; break;
+                    case 8: speakerConfig = KSAUDIO_SPEAKER_7POINT1_SURROUND; break;
+                }
 
-            result = this->audioClient->IsFormatSupported(
-                AUDCLNT_SHAREMODE_EXCLUSIVE,
-                (WAVEFORMATEX *) &wf,
-                NULL
-            );
+                for (const auto& target : targets) {
+                    ZeroMemory(&wf, sizeof(WAVEFORMATEXTENSIBLE));
+                    wf.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+                    wf.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+                    wf.Format.nChannels = channelCount;
+                    wf.Format.wBitsPerSample = target.bitsPerSample;
+                    wf.Format.nSamplesPerSec = targetRate;
+                    wf.Samples.wValidBitsPerSample = target.validBitsPerSample;
+                    wf.Format.nBlockAlign = (wf.Format.wBitsPerSample / 8) * wf.Format.nChannels;
+                    wf.Format.nAvgBytesPerSec = wf.Format.nSamplesPerSec * wf.Format.nBlockAlign;
+                    wf.dwChannelMask = speakerConfig;
+                    wf.SubFormat = target.subFormat;
 
-            if (result == S_OK) {
-                // Verify format support with a real test Initialize
-                // Workaround: Virtual Audio Cable (VAC) by Eugene Muzychenko reports support
-                // for 32-bit float in IsFormatSupported(), but actually attempting to Initialize()
-                // the client with that format consistently fails/returns 0x88890008 (AUDCLNT_E_UNSUPPORTED_FORMAT).
-                // Thus, we must perform a trial test Initialize to be absolutely sure the format is usable.
-                IAudioClient* testClient = nullptr;
-                if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&testClient) == S_OK) {
-                    HRESULT initHr = testClient->Initialize(
+                    result = this->audioClient->IsFormatSupported(
                         AUDCLNT_SHAREMODE_EXCLUSIVE,
-                        0,
-                        defaultPeriod,
-                        defaultPeriod,
-                        (WAVEFORMATEX*)&wf,
-                        NULL
-                    );
-                    testClient->Release();
-                    
-                    if (initHr == S_OK) {
-                        this->targetFormatType = target.formatType;
-                        formatFoundForRate = true;
-                        selectedTarget = &target;
-                        LogInfo("Found and verified format: " + std::string(target.name) + 
-                                 " at sample rate " + std::to_string(targetRate));
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (formatFoundForRate && selectedTarget) {
-            REFERENCE_TIME duration = preferredDuration;
-            if (duration > 2000000) {
-                duration = 2000000;
-            }
-            if (duration < defaultPeriod) {
-                duration = defaultPeriod;
-            }
-
-            // Search for compatible buffer durations and periodicity intervals.
-            // We use multiples of defaultPeriod to ensure synchronization with the driver's
-            // timing loop, which prevents sample rate mismatch stuttering or click/pop issues.
-            for (REFERENCE_TIME periodicity : periodicityCandidates) {
-                std::vector<REFERENCE_TIME> bufferCandidates;
-                bufferCandidates.push_back(duration);
-                for (int mult : {16, 8, 4, 2}) {
-                    REFERENCE_TIME d = defaultPeriod * mult;
-                    if (d < duration && d >= periodicity) {
-                        bufferCandidates.push_back(d);
-                    }
-                }
-                if (periodicity < duration) {
-                    if (std::find(bufferCandidates.begin(), bufferCandidates.end(), periodicity) == bufferCandidates.end()) {
-                        bufferCandidates.push_back(periodicity);
-                    }
-                }
-
-                for (REFERENCE_TIME bufferDuration : bufferCandidates) {
-                    if (!this->audioClient) {
-                        if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audioClient) != S_OK) {
-                            LogError("Failed to re-activate audioClient during candidate loop");
-                            continue;
-                        }
-                    }
-
-                    result = this->audioClient->Initialize(
-                        AUDCLNT_SHAREMODE_EXCLUSIVE,
-                        0,
-                        bufferDuration,
-                        periodicity,
                         (WAVEFORMATEX *) &wf,
                         NULL
                     );
-                    LogDebug("Initialize with bufferDuration " + std::to_string(bufferDuration) + 
-                             " and periodicity " + std::to_string(periodicity) + 
-                             " at sample rate " + std::to_string(targetRate) + 
-                             " returned HRESULT=" + HresultToString(result));
 
                     if (result == S_OK) {
-                        initialized = true;
-                        this->configuredSampleRate = targetRate;
-                        LogInfo("IAudioClient successfully initialized: rate=" + std::to_string(targetRate) + 
-                                ", bufferDuration=" + std::to_string(bufferDuration) + 
-                                ", periodicity=" + std::to_string(periodicity) + 
-                                ", format=" + std::string(selectedTarget->name));
-                        break;
-                    }
+                        // Verify format support with trial test Initialize
+                        IAudioClient* testClient = nullptr;
+                        if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&testClient) == S_OK) {
+                            HRESULT initHr = testClient->Initialize(
+                                AUDCLNT_SHAREMODE_EXCLUSIVE,
+                                0,
+                                defaultPeriod,
+                                defaultPeriod,
+                                (WAVEFORMATEX*)&wf,
+                                NULL
+                            );
 
-                    if (result == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
-                        UINT32 alignedFrames = 0;
-                        if (this->audioClient->GetBufferSize(&alignedFrames) == S_OK) {
-                            REFERENCE_TIME alignedDuration = (REFERENCE_TIME)((10000000.0 * alignedFrames / targetRate) + 0.5);
-                            
-                            this->audioClient->Release();
-                            this->audioClient = nullptr;
-                            
-                            if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audioClient) == S_OK) {
-                                result = this->audioClient->Initialize(
-                                    AUDCLNT_SHAREMODE_EXCLUSIVE,
-                                    0,
-                                    alignedDuration,
-                                    periodicity,
-                                    (WAVEFORMATEX *) &wf,
-                                    NULL
-                                );
-                                LogDebug("Re-Initialize with aligned duration " + std::to_string(alignedDuration) + 
-                                         " and periodicity " + std::to_string(periodicity) +
-                                         " returned HRESULT=" + HresultToString(result));
-                                if (result == S_OK) {
-                                    initialized = true;
-                                    this->configuredSampleRate = targetRate;
-                                    LogInfo("IAudioClient successfully initialized (aligned): rate=" + std::to_string(targetRate) + 
-                                            ", bufferDuration=" + std::to_string(alignedDuration) + 
-                                            ", periodicity=" + std::to_string(periodicity) + 
-                                            ", format=" + std::string(selectedTarget->name));
-                                    break;
+                            if (initHr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
+                                UINT32 alignedFrames = 0;
+                                if (testClient->GetBufferSize(&alignedFrames) == S_OK) {
+                                    REFERENCE_TIME alignedDuration = (REFERENCE_TIME)((10000000.0 * alignedFrames / targetRate) + 0.5);
+                                    testClient->Release();
+                                    testClient = nullptr;
+
+                                    if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&testClient) == S_OK) {
+                                        initHr = testClient->Initialize(
+                                            AUDCLNT_SHAREMODE_EXCLUSIVE,
+                                            0,
+                                            alignedDuration,
+                                            defaultPeriod,
+                                            (WAVEFORMATEX*)&wf,
+                                            NULL
+                                        );
+                                    }
                                 }
+                            }
+
+                            if (testClient) {
+                                testClient->Release();
+                                testClient = nullptr;
+                            }
+                            
+                            if (initHr == S_OK) {
+                                this->targetFormatType = target.formatType;
+                                this->configuredChannels = channelCount;
+                                formatFoundForRate = true;
+                                selectedTarget = &target;
+                                LogInfo("[Format] Verified format support: " + std::string(target.name) + 
+                                        " at " + std::to_string(targetRate) + " Hz (" + std::to_string(channelCount) + " ch)");
+                                break;
+                            } else {
+                                LogInfo("[Format] IsFormatSupported returned S_OK for " + std::string(target.name) + 
+                                        " at " + std::to_string(targetRate) + " Hz (" + std::to_string(channelCount) + " ch), but trial Initialize failed: " + HresultToString(initHr));
                             }
                         }
                     }
-
-                    if (this->audioClient) {
-                        this->audioClient->Release();
-                        this->audioClient = nullptr;
-                    }
                 }
-
-                if (initialized) {
+                if (formatFoundForRate) {
                     break;
                 }
             }
-        }
 
-        if (initialized) {
-            rateChanged = (cachedConfiguredRate != this->configuredSampleRate);
-            break;
+            if (formatFoundForRate && selectedTarget) {
+                REFERENCE_TIME duration = preferredDuration;
+                if (duration > 2000000) {
+                    duration = 2000000;
+                }
+                if (duration < defaultPeriod) {
+                    duration = defaultPeriod;
+                }
+
+                // Search for compatible buffer durations and periodicity intervals.
+                // We use multiples of defaultPeriod to ensure synchronization with the driver's
+                // timing loop, which prevents sample rate mismatch stuttering or click/pop issues.
+                for (REFERENCE_TIME periodicity : periodicityCandidates) {
+                    std::vector<REFERENCE_TIME> bufferCandidates;
+                    bufferCandidates.push_back(duration);
+                    for (int mult : {16, 8, 4, 2}) {
+                        REFERENCE_TIME d = defaultPeriod * mult;
+                        if (d < duration && d >= periodicity) {
+                            bufferCandidates.push_back(d);
+                        }
+                    }
+                    if (periodicity < duration) {
+                        if (std::find(bufferCandidates.begin(), bufferCandidates.end(), periodicity) == bufferCandidates.end()) {
+                            bufferCandidates.push_back(periodicity);
+                        }
+                    }
+
+                    for (REFERENCE_TIME bufferDuration : bufferCandidates) {
+                        if (!this->audioClient) {
+                            if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audioClient) != S_OK) {
+                                LogError("[Init] Failed to re-activate audioClient during candidate loop");
+                                continue;
+                            }
+                        }
+
+                        result = this->audioClient->Initialize(
+                            AUDCLNT_SHAREMODE_EXCLUSIVE,
+                            0,
+                            bufferDuration,
+                            periodicity,
+                            (WAVEFORMATEX *) &wf,
+                            NULL
+                        );
+                        LogDebug("Initialize with bufferDuration " + std::to_string(bufferDuration) + 
+                                 " and periodicity " + std::to_string(periodicity) + 
+                                 " at sample rate " + std::to_string(targetRate) + 
+                                 " returned HRESULT=" + HresultToString(result));
+
+                        if (result == S_OK) {
+                            initialized = true;
+                            this->configuredSampleRate = targetRate;
+                            LogInfo("[Init] IAudioClient initialized: " + std::to_string(targetRate) + " Hz, " +
+                                    std::string(selectedTarget->name) + " | Buffer: " + FormatHns(bufferDuration) + 
+                                    ", Period: " + FormatHns(periodicity));
+                            break;
+                        }
+
+                        if (result == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
+                            UINT32 alignedFrames = 0;
+                            if (this->audioClient->GetBufferSize(&alignedFrames) == S_OK) {
+                                REFERENCE_TIME alignedDuration = (REFERENCE_TIME)((10000000.0 * alignedFrames / targetRate) + 0.5);
+                                
+                                this->audioClient->Release();
+                                this->audioClient = nullptr;
+                                
+                                if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audioClient) == S_OK) {
+                                    result = this->audioClient->Initialize(
+                                        AUDCLNT_SHAREMODE_EXCLUSIVE,
+                                        0,
+                                        alignedDuration,
+                                        periodicity,
+                                        (WAVEFORMATEX *) &wf,
+                                        NULL
+                                    );
+                                    LogDebug("Re-Initialize with aligned duration " + std::to_string(alignedDuration) + 
+                                             " and periodicity " + std::to_string(periodicity) +
+                                             " returned HRESULT=" + HresultToString(result));
+                                    if (result == S_OK) {
+                                        initialized = true;
+                                        this->configuredSampleRate = targetRate;
+                                        LogInfo("[Init] IAudioClient initialized (aligned): " + std::to_string(targetRate) + " Hz, " +
+                                                std::string(selectedTarget->name) + " | Buffer: " + FormatHns(alignedDuration) + 
+                                                " (" + std::to_string(alignedFrames) + " frames), Period: " + FormatHns(periodicity));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (this->audioClient) {
+                            this->audioClient->Release();
+                            this->audioClient = nullptr;
+                        }
+                    }
+
+                    if (initialized) {
+                        break;
+                    }
+                }
+            }
+
+            if (initialized) {
+                rateChanged = (cachedConfiguredRate != this->configuredSampleRate);
+                break;
+            }
         }
     }
 
     if (!initialized) {
-        LogError("Failed to initialize IAudioClient with any target sample rate and format");
+        LogError("[Init] Failed to initialize IAudioClient with any target sample rate and format");
         return false;
     }
 
@@ -1399,10 +1529,10 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
             NULL
         );
         if (err) {
-            LogError("Failed to create soxr resampler: " + std::string(soxr_strerror(err)));
+            LogError("[Resampler] Failed to create soxr resampler: " + std::string(soxr_strerror(err)));
             return false;
         }
-        LogInfo("Created soxr resampler to resample " + std::to_string(buffer->SampleRate()) + 
+        LogInfo("[Resampler] Created soxr resampler: " + std::to_string(buffer->SampleRate()) + 
                 " Hz -> " + std::to_string(this->configuredSampleRate) + " Hz (Preset: " + debugQualityName + ")");
 
         // Pre-allocate the resample buffer to avoid heap allocations/zero-initialization overhead
@@ -1442,8 +1572,15 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
         }
     }
 
-    double headroomDb = ::prefs ? ::prefs->GetDouble(PREF_SOXR_HEADROOM_DB, 0.0) : 0.0;
+    double headroomDb = 0.0;
+    if (::prefs) {
+        headroomDb = ::prefs->GetDouble(PREF_HEADROOM_DB, 0.0);
+        if (headroomDb == 0.0) {
+            headroomDb = ::prefs->GetDouble(PREF_SOXR_HEADROOM_DB, 0.0);
+        }
+    }
     this->headroomMultiplier = (float)std::pow(10.0, headroomDb / 20.0);
 
+    this->configuredInputChannels = buffer->Channels();
     return true;
 }

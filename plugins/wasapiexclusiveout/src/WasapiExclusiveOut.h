@@ -53,6 +53,14 @@ class VstChain;
 
 class WasapiExclusiveOut : public IOutput {
     public:
+        enum TargetFormatType {
+            FormatFloat32,
+            FormatPCM32,
+            FormatPCM24In32,
+            FormatPCM24Packed,
+            FormatPCM16
+        };
+
         WasapiExclusiveOut();
         ~WasapiExclusiveOut();
 
@@ -83,14 +91,6 @@ class WasapiExclusiveOut : public IOutput {
             StatePaused
         };
 
-        enum TargetFormatType {
-            FormatFloat32,
-            FormatPCM32,
-            FormatPCM24In32,
-            FormatPCM24Packed,
-            FormatPCM16
-        };
-
         bool Configure(IBuffer *buffer);
         bool InitializeAudioClient();
         void Reset();
@@ -110,9 +110,12 @@ class WasapiExclusiveOut : public IOutput {
         double latency;
         int rate;
         int configuredSampleRate;
+        int configuredChannels;
+        int configuredInputChannels;
         float headroomMultiplier;
         void* resampler;
         std::vector<float> resampleBuffer;
+        std::vector<float> stereoBuffer;
         bool deviceChanged;
         std::unique_ptr<VstChain> vstChain;
         std::recursive_mutex stateMutex;
