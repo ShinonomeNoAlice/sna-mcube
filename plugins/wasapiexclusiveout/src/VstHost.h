@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <vector>
 #include <map>
 #include <string>
@@ -7,6 +11,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <algorithm>
 #include <Windows.h>
 
 #include "public.sdk/source/vst/hosting/module.h"
@@ -72,6 +77,7 @@ private:
     double currentSampleRate = 0.0;
     int currentBlockSize = 0;
     int64_t totalSamplesProcessed = 0; // Monotonic sample counter for VST ProcessContext
+    int64_t streamStartSystemTime = 0; // High-precision anchor timestamp (ns) for deterministic systemTime
     
     std::mutex paramMutex;
     struct ParamChange {
@@ -105,6 +111,8 @@ public:
 
     void Process(float* interleavedBuffer, int numSamples, int numChannels);
     void SetSampleRateAndBlockSize(double sampleRate, int blockSize);
+    double GetCurrentSampleRate() const { return currentSampleRate; }
+    int GetCurrentBlockSize() const { return currentBlockSize; }
 
 private:
     void ReloadConfig();

@@ -510,7 +510,7 @@ void VstPlugin::SetupProcessing() {
     }
     
     this->currentSampleRate = 44100.0;
-    this->currentBlockSize = 4096;
+    this->currentBlockSize = 16384;
     
     ProcessSetup setup;
     setup.processMode = kRealtime;
@@ -535,13 +535,22 @@ void VstPlugin::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
     }
     
     LogDebug("VstPlugin::SetSampleRateAndBlockSize(" + std::to_string(sampleRate) + ", " + std::to_string(blockSize) + ") start");
+    
+    // Reset sample timing counter and anchor timestamp ONLY on sample rate change.
+    // If only block size expanded, preserve timeline continuity so visualizers don't jump back to 0.
+    if (sampleRate != this->currentSampleRate) {
+        totalSamplesProcessed = 0;
+        streamStartSystemTime = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        this->currentSampleRate = sampleRate;
+    }
+
     processor->setProcessing(false);
     component->setActive(false);
     
-    this->currentSampleRate = sampleRate;
-    if (blockSize > this->currentBlockSize) {
-        this->currentBlockSize = blockSize;
-    }
+    int neededBlock = blockSize * 2;
+    if (neededBlock > this->currentBlockSize) this->currentBlockSize = neededBlock;
+    if (this->currentBlockSize < 16384) this->currentBlockSize = 16384;
     
     ProcessSetup setup;
     setup.processMode = kRealtime;
@@ -612,19 +621,28 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     context.sampleRate = currentSampleRate;
     context.projectTimeSamples = totalSamplesProcessed;
     
-    // systemTime in nanoseconds using high-precision steady_clock
-    auto now = std::chrono::steady_clock::now();
-    auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-    context.systemTime = (int64)ns;
+    // Calculate systemTime deterministically based on sample count to eliminate WASAPI buffer scheduling jitter
+    if (streamStartSystemTime == 0) {
+        streamStartSystemTime = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    int64_t elapsedNs = (currentSampleRate > 0) 
+        ? (int64_t)((double)totalSamplesProcessed * 1000000000.0 / currentSampleRate)
+        : 0;
+    context.systemTime = streamStartSystemTime + elapsedNs;
     
-    context.state = ProcessContext::kPlaying | ProcessContext::kSystemTimeValid | ProcessContext::kContTimeValid;
+    context.state = ProcessContext::kPlaying | ProcessContext::kSystemTimeValid | ProcessContext::kContTimeValid | ProcessContext::kProjectTimeMusicValid;
     context.continousTimeSamples = totalSamplesProcessed;
     
     // Provide default friendly musical info (120 BPM, 4/4 time signature)
     context.tempo = 120.0;
     context.timeSigNumerator = 4;
     context.timeSigDenominator = 4;
-    context.state |= ProcessContext::kTempoValid | ProcessContext::kTimeSigValid;
+    context.projectTimeMusic = (currentSampleRate > 0)
+        ? ((double)totalSamplesProcessed / currentSampleRate * (context.tempo / 60.0))
+        : 0.0;
+    context.barPositionMusic = std::floor(context.projectTimeMusic / 4.0) * 4.0;
+    context.state |= ProcessContext::kTempoValid | ProcessContext::kTimeSigValid | ProcessContext::kProjectTimeMusicValid | ProcessContext::kBarPositionValid;
 
     // Monotonically advance the audio sample counter
     totalSamplesProcessed += numSamples;
@@ -650,15 +668,18 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     data.inputs = &inBus;
     data.outputs = &outBus;
     
-    IPtr<ParameterChangesHelper> paramChanges = owned(new ParameterChangesHelper());
+    IPtr<ParameterChangesHelper> paramChanges = nullptr;
     {
         std::lock_guard<std::mutex> lock(paramMutex);
-        for (const auto& change : pendingParamChanges) {
-            paramChanges->addChange(change.id, change.value);
+        if (!pendingParamChanges.empty()) {
+            paramChanges = owned(new ParameterChangesHelper());
+            for (const auto& change : pendingParamChanges) {
+                paramChanges->addChange(change.id, change.value);
+            }
+            pendingParamChanges.clear();
         }
-        pendingParamChanges.clear();
     }
-    data.inputParameterChanges = paramChanges.get();
+    data.inputParameterChanges = paramChanges ? paramChanges.get() : nullptr;
     
     // Allocate and assign output parameter changes to collect meters/LED levels
     IPtr<ParameterChangesHelper> outParamChanges = owned(new ParameterChangesHelper());
@@ -666,18 +687,20 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     
     processor->process(data);
     
-    // Queue output parameter changes to UI thread safely
+    // Queue output parameter changes to UI thread safely without blocking audio thread
     int32 numOutChanges = outParamChanges->getParameterCount();
     if (numOutChanges > 0) {
-        std::lock_guard<std::mutex> lock(outputParamMutex);
-        for (int32 i = 0; i < numOutChanges; ++i) {
-            if (auto* queue = outParamChanges->getParameterData(i)) {
-                int32 numPoints = queue->getPointCount();
-                if (numPoints > 0) {
-                    int32 sampleOffset = 0;
-                    ParamValue val = 0.0;
-                    if (queue->getPoint(numPoints - 1, sampleOffset, val) == kResultTrue) {
-                        latestOutputParams[queue->getParameterId()] = val;
+        std::unique_lock<std::mutex> lock(outputParamMutex, std::defer_lock);
+        if (lock.try_lock()) {
+            for (int32 i = 0; i < numOutChanges; ++i) {
+                if (auto* queue = outParamChanges->getParameterData(i)) {
+                    int32 numPoints = queue->getPointCount();
+                    if (numPoints > 0) {
+                        int32 sampleOffset = 0;
+                        ParamValue val = 0.0;
+                        if (queue->getPoint(numPoints - 1, sampleOffset, val) == kResultTrue) {
+                            latestOutputParams[queue->getParameterId()] = val;
+                        }
                     }
                 }
             }
@@ -766,8 +789,8 @@ void VstPlugin::CheckUiState(bool showUi) {
             LogDebug("View attached");
         }
 
-        // Trigger WM_TIMER every 30ms (~33 FPS) to update VU meters and correlation indicators
-        SetTimer(hwnd, 1, 30, nullptr);
+        // Trigger WM_TIMER every 15ms (~66 FPS) to update VU meters and correlation indicators
+        SetTimer(hwnd, 1, 15, nullptr);
 
         ShowWindow(hwnd, SW_SHOW);
     } else if (!showUi && hwnd) {
@@ -856,9 +879,11 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         if (plugin && plugin->controller) {
             std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> changes;
             {
-                std::lock_guard<std::mutex> lock(plugin->outputParamMutex);
-                changes = plugin->latestOutputParams;
-                plugin->latestOutputParams.clear();
+                std::unique_lock<std::mutex> lock(plugin->outputParamMutex, std::defer_lock);
+                if (lock.try_lock()) {
+                    changes = plugin->latestOutputParams;
+                    plugin->latestOutputParams.clear();
+                }
             }
             for (const auto& change : changes) {
                 plugin->controller->setParamNormalized(change.first, change.second);
@@ -1141,7 +1166,9 @@ void VstChain::WatchThread() {
 void VstChain::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
     std::lock_guard<std::mutex> lock(chainMutex);
     currentSampleRate = sampleRate;
-    currentBlockSize = blockSize;
+    int neededBlock = blockSize * 2;
+    if (neededBlock > currentBlockSize) currentBlockSize = neededBlock;
+    if (currentBlockSize < 16384) currentBlockSize = 16384;
     for (auto& p : plugins) {
         p->SetSampleRateAndBlockSize(sampleRate, blockSize);
     }
@@ -1156,7 +1183,11 @@ void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels
         planarChannelPointers.resize(numChannels);
     }
     for (int c = 0; c < numChannels; ++c) {
-        if (planarChannels[c].size() < numSamples) {
+        size_t targetCapacity = (size_t)numSamples > 16384 ? (size_t)numSamples : 16384;
+        if (planarChannels[c].capacity() < targetCapacity) {
+            planarChannels[c].reserve(targetCapacity);
+        }
+        if (planarChannels[c].size() < (size_t)numSamples) {
             planarChannels[c].resize(numSamples);
         }
         planarChannelPointers[c] = planarChannels[c].data();

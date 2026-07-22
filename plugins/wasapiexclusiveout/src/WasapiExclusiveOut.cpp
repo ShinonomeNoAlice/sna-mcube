@@ -622,7 +622,9 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             std::string tomlPath = getVstConfigPath();
             this->vstChain = std::make_unique<VstChain>(tomlPath);
         }
-        this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
+        if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || (int)framesToWrite > this->vstChain->GetCurrentBlockSize()) {
+            this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
+        }
         this->vstChain->Process(src, framesToWrite, currentChannels);
     } else {
         if (this->vstChain) {
