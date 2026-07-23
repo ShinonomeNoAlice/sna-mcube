@@ -628,9 +628,11 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     auto now = std::chrono::steady_clock::now();
     int64_t osTimeNs = (int64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
     
-    // If idealized stream time drifts from OS time by more than 50ms, resync the stream anchor.
-    // This maintains perfect micro-pacing for VSTs while preventing macro-drift.
-    if (std::abs(osTimeNs - idealSystemTimeNs) > 50000000) {
+    // If idealized stream time drifts from OS time by more than 50ms BEHIND (starving), 
+    // or more than 2000ms AHEAD (huge buffer anomaly), resync the stream anchor.
+    // Audio is naturally pre-buffered, so idealSystemTimeNs will ALWAYS be ahead of osTimeNs 
+    // by the hardware buffer duration.
+    if (osTimeNs - idealSystemTimeNs > 50000000 || idealSystemTimeNs - osTimeNs > 2000000000) {
         streamStartSystemTime = osTimeNs - (int64_t)((double)totalSamplesProcessed * 1000000000.0 / currentSampleRate);
         idealSystemTimeNs = osTimeNs;
     }
