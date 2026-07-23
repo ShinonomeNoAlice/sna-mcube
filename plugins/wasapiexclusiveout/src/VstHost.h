@@ -109,7 +109,7 @@ public:
     void SavePluginState(VstPlugin* plugin);
     std::string GetConfigPath() const { return configPath; }
 
-    void Process(float* interleavedBuffer, int numSamples, int numChannels);
+    void Process(float* interleavedBuffer, int numSamples, int numChannels, int targetBlockSize = 0);
     void SetSampleRateAndBlockSize(double sampleRate, int blockSize);
     double GetCurrentSampleRate() const { return currentSampleRate; }
     int GetCurrentBlockSize() const { return currentBlockSize; }

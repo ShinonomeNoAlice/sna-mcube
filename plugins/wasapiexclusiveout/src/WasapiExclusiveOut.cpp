@@ -70,6 +70,7 @@
 #define PREF_SOXR_CUSTOM_STOPBAND_BEGIN "soxr_custom_stopband_begin"
 #define PREF_SOXR_CUSTOM_DOUBLE_PRECISION "soxr_custom_double_precision"
 #define PREF_VST_ENABLED "vst_enabled"
+#define PREF_VST_BLOCK_SIZE "vst_block_size"
 
 
 using Lock = std::unique_lock<std::recursive_mutex>;
@@ -315,6 +316,7 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     // 8. VST Host Settings
     schema->AddEnum("--- VST3 Host ---", { "---" }, "---");
     schema->AddBool(PREF_VST_ENABLED, true);
+    schema->AddEnum(PREF_VST_BLOCK_SIZE, { "512", "1024", "2048", "4096", "Passthrough" }, "1024");
 
     return schema;
 }
@@ -625,7 +627,18 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || (int)framesToWrite > this->vstChain->GetCurrentBlockSize()) {
             this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
         }
-        this->vstChain->Process(src, framesToWrite, currentChannels);
+        
+        int targetBlockSize = 1024;
+        if (::prefs) {
+            std::string bsStr = getPreferenceString<std::string>(prefs, PREF_VST_BLOCK_SIZE, "1024");
+            if (bsStr == "512") targetBlockSize = 512;
+            else if (bsStr == "1024") targetBlockSize = 1024;
+            else if (bsStr == "2048") targetBlockSize = 2048;
+            else if (bsStr == "4096") targetBlockSize = 4096;
+            else if (bsStr == "Passthrough") targetBlockSize = 0;
+        }
+
+        this->vstChain->Process(src, framesToWrite, currentChannels, targetBlockSize);
     } else {
         if (this->vstChain) {
             this->vstChain.reset();

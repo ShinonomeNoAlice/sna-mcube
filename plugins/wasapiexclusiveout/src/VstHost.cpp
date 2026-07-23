@@ -1174,7 +1174,7 @@ void VstChain::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
     }
 }
 
-void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels) {
+void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels, int targetBlockSize) {
     std::lock_guard<std::mutex> lock(chainMutex);
     if (plugins.empty() || numChannels == 0 || numSamples == 0) return;
     
@@ -1190,7 +1190,6 @@ void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels
         if (planarChannels[c].size() < (size_t)numSamples) {
             planarChannels[c].resize(numSamples);
         }
-        planarChannelPointers[c] = planarChannels[c].data();
     }
     
     // De-interleave
@@ -1205,7 +1204,22 @@ void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels
         if (p->IsBypassed()) {
             continue;
         }
-        p->Process(planarChannelPointers.data(), planarChannelPointers.data(), numSamples, numChannels);
+        if (targetBlockSize > 0 && numSamples > targetBlockSize) {
+            int offset = 0;
+            while (offset < numSamples) {
+                int chunkSize = (numSamples - offset > targetBlockSize) ? targetBlockSize : (numSamples - offset);
+                for (int c = 0; c < numChannels; ++c) {
+                    planarChannelPointers[c] = planarChannels[c].data() + offset;
+                }
+                p->Process(planarChannelPointers.data(), planarChannelPointers.data(), chunkSize, numChannels);
+                offset += chunkSize;
+            }
+        } else {
+            for (int c = 0; c < numChannels; ++c) {
+                planarChannelPointers[c] = planarChannels[c].data();
+            }
+            p->Process(planarChannelPointers.data(), planarChannelPointers.data(), numSamples, numChannels);
+        }
     }
     
     // Re-interleave
