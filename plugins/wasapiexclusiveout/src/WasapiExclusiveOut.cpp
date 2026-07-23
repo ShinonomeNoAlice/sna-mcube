@@ -640,16 +640,18 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         }
     }
 
-    // Step 4: Extract EXACTLY 1 block (targetBlockSize frames) from resampleFifo and send to VST & WASAPI
-    size_t fifoFrames = this->resampleFifo.size() / currentChannels;
-    if (fifoFrames == 0) {
-        return consumedInputBuffer ? OutputState::BufferWritten : OutputState::BufferFull;
-    }
+    // Step 4: Fill WASAPI hardware render buffer from resampleFifo using 1024-frame VST blocks
+    UINT32 totalWrittenFrames = 0;
 
-    UINT32 writeFrames = (std::min)((UINT32)fifoFrames, targetBlockSize);
-    writeFrames = (std::min)(writeFrames, availableFrames);
+    while (totalWrittenFrames < availableFrames && !this->resampleFifo.empty()) {
+        size_t fifoFrames = this->resampleFifo.size() / currentChannels;
+        if (fifoFrames == 0) break;
 
-    if (writeFrames > 0) {
+        UINT32 writeFrames = (std::min)((UINT32)fifoFrames, targetBlockSize);
+        UINT32 spaceRemaining = availableFrames - totalWrittenFrames;
+        writeFrames = (std::min)(writeFrames, spaceRemaining);
+        if (writeFrames == 0) break;
+
         UINT32 writeSamples = writeFrames * currentChannels;
         if (this->vstBlockBuffer.size() < writeSamples) {
             this->vstBlockBuffer.resize(writeSamples);
@@ -724,6 +726,9 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
 
             // Erase written samples from FIFO
             this->resampleFifo.erase(this->resampleFifo.begin(), this->resampleFifo.begin() + writeSamples);
+            totalWrittenFrames += writeFrames;
+        } else {
+            break;
         }
     }
 
