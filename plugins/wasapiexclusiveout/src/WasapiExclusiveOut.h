@@ -117,6 +117,8 @@ class WasapiExclusiveOut : public IOutput {
         float headroomMultiplier;
         void* resampler;
         std::vector<float> resampleBuffer;
+        std::vector<float> resampleFifo;
+        std::vector<float> vstBlockBuffer;
         std::vector<float> stereoBuffer;
         bool deviceChanged;
         HANDLE mmcssHandle;
