@@ -541,6 +541,8 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
     UINT32 currentChannels = (UINT32)this->configuredChannels;
     if (currentChannels == 0) currentChannels = (UINT32)buffer->Channels();
 
+    bool consumedInputBuffer = false;
+
     // Step 1: If resampleFifo is empty and a new audio buffer is provided, resample it into resampleFifo
     if (this->resampleFifo.empty() && buffer && provider && buffer->Samples() > 0) {
         float* src = buffer->BufferPointer();
@@ -600,6 +602,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
 
         // Mark input buffer as processed ONLY when we consume it into empty FIFO
         provider->OnBufferProcessed(buffer);
+        consumedInputBuffer = true;
     }
 
     // Step 2: Determine target hardware block size for single-block VST dispatch
@@ -640,7 +643,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
     // Step 4: Extract EXACTLY 1 block (targetBlockSize frames) from resampleFifo and send to VST & WASAPI
     size_t fifoFrames = this->resampleFifo.size() / currentChannels;
     if (fifoFrames == 0) {
-        return OutputState::BufferWritten;
+        return consumedInputBuffer ? OutputState::BufferWritten : OutputState::BufferFull;
     }
 
     UINT32 writeFrames = (std::min)((UINT32)fifoFrames, targetBlockSize);
@@ -679,16 +682,13 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
 
             if (this->targetFormatType == FormatFloat32) {
                 float* dst = (float*) data;
-                for (UINT32 i = 0; i < writeSamples; ++i) {
-                    dst[i] = src[i] * vol;
-                }
+                for (UINT32 i = 0; i < writeSamples; ++i) dst[i] = src[i] * vol;
             }
             else if (this->targetFormatType == FormatPCM32) {
                 int32_t* dst = (int32_t*) data;
                 for (UINT32 i = 0; i < writeSamples; ++i) {
                     double s = (double)src[i] * (double)vol;
-                    if (s > 1.0) s = 1.0;
-                    else if (s < -1.0) s = -1.0;
+                    if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = (int32_t)(s * 2147483647.0);
                 }
             }
@@ -696,8 +696,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
                 int32_t* dst = (int32_t*) data;
                 for (UINT32 i = 0; i < writeSamples; ++i) {
                     double s = (double)src[i] * (double)vol;
-                    if (s > 1.0) s = 1.0;
-                    else if (s < -1.0) s = -1.0;
+                    if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = ((int32_t)(s * 8388607.0)) << 8;
                 }
             }
@@ -705,8 +704,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
                 uint8_t* dst = (uint8_t*) data;
                 for (UINT32 i = 0; i < writeSamples; ++i) {
                     double s = (double)src[i] * (double)vol;
-                    if (s > 1.0) s = 1.0;
-                    else if (s < -1.0) s = -1.0;
+                    if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     int32_t val = (int32_t)(s * 8388607.0);
                     dst[3 * i] = val & 0xFF;
                     dst[3 * i + 1] = (val >> 8) & 0xFF;
@@ -717,8 +715,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
                 int16_t* dst = (int16_t*) data;
                 for (UINT32 i = 0; i < writeSamples; ++i) {
                     double s = (double)src[i] * (double)vol;
-                    if (s > 1.0) s = 1.0;
-                    else if (s < -1.0) s = -1.0;
+                    if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = (int16_t)(s * 32767.0);
                 }
             }
@@ -730,7 +727,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         }
     }
 
-    return OutputState::BufferWritten;
+    return consumedInputBuffer ? OutputState::BufferWritten : OutputState::BufferFull;
 }
 
 void WasapiExclusiveOut::Reset() {
