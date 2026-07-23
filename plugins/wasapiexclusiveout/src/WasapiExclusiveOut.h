@@ -42,6 +42,7 @@
 
 #include <mmdeviceapi.h>
 #include <Audioclient.h>
+#include <avrt.h>
 
 #include <musikcore/sdk/IOutput.h>
 #include <musikcore/sdk/IDevice.h>
@@ -93,6 +94,7 @@ class WasapiExclusiveOut : public IOutput {
 
         bool Configure(IBuffer *buffer);
         bool InitializeAudioClient();
+        HRESULT InitializeAudioClientWithEvent(REFERENCE_TIME bufferDuration, REFERENCE_TIME periodicity, WAVEFORMATEX* format);
         void Reset();
         IMMDevice* GetPreferredDevice();
 
@@ -117,6 +119,8 @@ class WasapiExclusiveOut : public IOutput {
         std::vector<float> resampleBuffer;
         std::vector<float> stereoBuffer;
         bool deviceChanged;
+        HANDLE mmcssHandle;
+        HANDLE hAudioEvent;
         std::unique_ptr<VstChain> vstChain;
         std::recursive_mutex stateMutex;
 };

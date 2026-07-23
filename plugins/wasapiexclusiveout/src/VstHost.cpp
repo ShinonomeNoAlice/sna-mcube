@@ -621,15 +621,9 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     context.sampleRate = currentSampleRate;
     context.projectTimeSamples = totalSamplesProcessed;
     
-    // Calculate systemTime deterministically based on sample count to eliminate WASAPI buffer scheduling jitter
-    if (streamStartSystemTime == 0) {
-        streamStartSystemTime = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-    }
-    int64_t elapsedNs = (currentSampleRate > 0) 
-        ? (int64_t)((double)totalSamplesProcessed * 1000000000.0 / currentSampleRate)
-        : 0;
-    context.systemTime = streamStartSystemTime + elapsedNs;
+    // systemTime in nanoseconds using high-precision steady_clock
+    auto now = std::chrono::steady_clock::now();
+    context.systemTime = (int64)std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
     
     context.state = ProcessContext::kPlaying | ProcessContext::kSystemTimeValid | ProcessContext::kContTimeValid | ProcessContext::kProjectTimeMusicValid;
     context.continousTimeSamples = totalSamplesProcessed;

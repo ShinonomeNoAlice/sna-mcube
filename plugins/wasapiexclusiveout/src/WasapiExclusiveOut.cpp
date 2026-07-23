@@ -430,6 +430,8 @@ WasapiExclusiveOut::WasapiExclusiveOut()
 , configuredInputChannels(0)
 , resampler(nullptr)
 , deviceChanged(false)
+, mmcssHandle(nullptr)
+, hAudioEvent(nullptr)
 , volume(1.0f)
 , headroomMultiplier(1.0f) {
     ZeroMemory(&waveFormat, sizeof(WAVEFORMATEXTENSIBLE));
@@ -511,6 +513,16 @@ void WasapiExclusiveOut::Drain() {
 OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider) {
     Lock lock(this->stateMutex);
 
+    if (!this->mmcssHandle) {
+        DWORD taskIndex = 0;
+        this->mmcssHandle = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
+        if (this->mmcssHandle) {
+            LogInfo("[MMCSS] Audio playback thread priority elevated to 'Pro Audio'");
+        } else {
+            LogWarning("[MMCSS] Failed to elevate thread priority, error: " + std::to_string(GetLastError()));
+        }
+    }
+
     if (this->state == StatePaused) {
         return OutputState::InvalidState;
     }
@@ -540,19 +552,23 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         expectedOutputFrames = (UINT32)((double)framesToWrite * (double)this->configuredSampleRate / (double)buffer->SampleRate()) + 16;
     }
 
-    // Rationale for checking WASAPI buffer capacity before resampling:
-    // To prevent buffer underruns and stutter, we must check if WASAPI has enough available frames
-    // for the expected resampled output *before* calling the expensive soxr_process().
-    // If WASAPI is full/lacks space, we return the calculated sleep delta immediately. This allows
-    // the host thread to yield and sleep without wasting CPU cycles on resampling that cannot be written,
-    // and prevents sample accumulation/timing misalignment.
     if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
         availableFrames = (this->outputBufferFrames - frameOffset);
         if (availableFrames < expectedOutputFrames) {
-            UINT32 delta = expectedOutputFrames - availableFrames;
-            UINT32 sleepMs = (UINT32) std::ceil((double)delta * 1000.0 / (double)this->configuredSampleRate);
-            if (sleepMs < 1) sleepMs = 1;
-            return (OutputState) sleepMs;
+            // Event-driven DAC interrupt wait: if hardware event handle exists, wait directly on the DAC interrupt
+            if (this->hAudioEvent) {
+                WaitForSingleObject(this->hAudioEvent, 20);
+                if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
+                    availableFrames = (this->outputBufferFrames - frameOffset);
+                }
+            }
+
+            if (availableFrames < expectedOutputFrames) {
+                UINT32 delta = expectedOutputFrames - availableFrames;
+                UINT32 sleepMs = (UINT32) std::ceil((double)delta * 1000.0 / (double)this->configuredSampleRate);
+                if (sleepMs < 1) sleepMs = 1;
+                return (OutputState) sleepMs;
+            }
         }
     } else {
         return OutputState::FormatError;
@@ -732,6 +748,16 @@ void WasapiExclusiveOut::Reset() {
 
     if (this->device) {
         this->device->Release();
+    }
+
+    if (this->mmcssHandle) {
+        AvRevertMmThreadCharacteristics(this->mmcssHandle);
+        this->mmcssHandle = nullptr;
+    }
+
+    if (this->hAudioEvent) {
+        CloseHandle(this->hAudioEvent);
+        this->hAudioEvent = nullptr;
     }
 
     this->audioClock = nullptr;
@@ -973,6 +999,57 @@ bool WasapiExclusiveOut::InitializeAudioClient() {
     return true;
 }
 
+HRESULT WasapiExclusiveOut::InitializeAudioClientWithEvent(
+    REFERENCE_TIME bufferDuration,
+    REFERENCE_TIME periodicity,
+    WAVEFORMATEX* format) 
+{
+    if (this->hAudioEvent) {
+        CloseHandle(this->hAudioEvent);
+        this->hAudioEvent = nullptr;
+    }
+
+    // Attempt Event-driven WASAPI initialization
+    HRESULT hr = this->audioClient->Initialize(
+        AUDCLNT_SHAREMODE_EXCLUSIVE,
+        AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+        bufferDuration,
+        periodicity,
+        format,
+        NULL
+    );
+
+    if (hr == S_OK) {
+        this->hAudioEvent = CreateEventEx(NULL, NULL, 0, EVENT_MODIFY_STATE | SYNCHRONIZE);
+        if (this->hAudioEvent) {
+            HRESULT evtHr = this->audioClient->SetEventHandle(this->hAudioEvent);
+            if (evtHr == S_OK) {
+                LogInfo("[Init] Event-driven WASAPI Exclusive initialized successfully");
+                return S_OK;
+            }
+            LogWarning("[Init] SetEventHandle failed: " + HresultToString(evtHr));
+            CloseHandle(this->hAudioEvent);
+            this->hAudioEvent = nullptr;
+        }
+    }
+
+    // Fallback: Polling mode initialization
+    if (hr != AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
+        hr = this->audioClient->Initialize(
+            AUDCLNT_SHAREMODE_EXCLUSIVE,
+            0,
+            bufferDuration,
+            periodicity,
+            format,
+            NULL
+        );
+        if (hr == S_OK) {
+            LogInfo("[Init] Polling WASAPI Exclusive initialized successfully");
+        }
+    }
+    return hr;
+}
+
 bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     /* assumes stateMutex is locked */
     LogDebug("Configure called: nChannels=" + std::to_string(buffer->Channels()) + 
@@ -1190,13 +1267,10 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
                     }
                 }
 
-                result = this->audioClient->Initialize(
-                    AUDCLNT_SHAREMODE_EXCLUSIVE,
-                    0,
+                result = this->InitializeAudioClientWithEvent(
                     bufferDuration,
                     periodicity,
-                    (WAVEFORMATEX *) &this->waveFormat,
-                    NULL
+                    (WAVEFORMATEX *) &this->waveFormat
                 );
 
                 if (result == S_OK) {
@@ -1217,13 +1291,10 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
                         this->audioClient = nullptr;
                         
                         if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audioClient) == S_OK) {
-                            result = this->audioClient->Initialize(
-                                AUDCLNT_SHAREMODE_EXCLUSIVE,
-                                0,
+                            result = this->InitializeAudioClientWithEvent(
                                 alignedDuration,
                                 periodicity,
-                                (WAVEFORMATEX *) &this->waveFormat,
-                                NULL
+                                (WAVEFORMATEX *) &this->waveFormat
                             );
                             if (result == S_OK) {
                                 initialized = true;
@@ -1382,13 +1453,10 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
                             }
                         }
 
-                        result = this->audioClient->Initialize(
-                            AUDCLNT_SHAREMODE_EXCLUSIVE,
-                            0,
+                        result = this->InitializeAudioClientWithEvent(
                             bufferDuration,
                             periodicity,
-                            (WAVEFORMATEX *) &wf,
-                            NULL
+                            (WAVEFORMATEX *) &wf
                         );
                         LogDebug("Initialize with bufferDuration " + std::to_string(bufferDuration) + 
                                  " and periodicity " + std::to_string(periodicity) + 
@@ -1413,13 +1481,10 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
                                 this->audioClient = nullptr;
                                 
                                 if (this->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audioClient) == S_OK) {
-                                    result = this->audioClient->Initialize(
-                                        AUDCLNT_SHAREMODE_EXCLUSIVE,
-                                        0,
+                                    result = this->InitializeAudioClientWithEvent(
                                         alignedDuration,
                                         periodicity,
-                                        (WAVEFORMATEX *) &wf,
-                                        NULL
+                                        (WAVEFORMATEX *) &wf
                                     );
                                     LogDebug("Re-Initialize with aligned duration " + std::to_string(alignedDuration) + 
                                              " and periodicity " + std::to_string(periodicity) +
