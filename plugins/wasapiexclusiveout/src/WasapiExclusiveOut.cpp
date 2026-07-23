@@ -541,8 +541,8 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
     UINT32 currentChannels = (UINT32)this->configuredChannels;
     if (currentChannels == 0) currentChannels = (UINT32)buffer->Channels();
 
-    // Step 1: If a new audio buffer is provided, resample it into resampleFifo and notify provider
-    if (buffer && provider && buffer->Samples() > 0) {
+    // Step 1: If resampleFifo is empty and a new audio buffer is provided, resample it into resampleFifo
+    if (this->resampleFifo.empty() && buffer && provider && buffer->Samples() > 0) {
         float* src = buffer->BufferPointer();
         UINT32 inputFrames = (UINT32)buffer->Samples() / (UINT32)buffer->Channels();
         
@@ -598,6 +598,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         size_t samplesToPush = (size_t)resampleFrames * currentChannels;
         this->resampleFifo.insert(this->resampleFifo.end(), resampleOut, resampleOut + samplesToPush);
 
+        // Mark input buffer as processed ONLY when we consume it into empty FIFO
         provider->OnBufferProcessed(buffer);
     }
 
