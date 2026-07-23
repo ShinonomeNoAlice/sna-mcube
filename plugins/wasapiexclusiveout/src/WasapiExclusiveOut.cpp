@@ -536,10 +536,6 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         return OutputState::FormatError;
     }
 
-    HRESULT result;
-    UINT32 availableFrames = 0;
-    UINT32 frameOffset = 0;
-    
     float* src = buffer->BufferPointer();
     UINT32 samples = (UINT32)buffer->Samples();
     UINT32 framesToWrite = samples / (UINT32)buffer->Channels();
@@ -550,29 +546,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         expectedOutputFrames = (UINT32)((double)framesToWrite * (double)this->configuredSampleRate / (double)buffer->SampleRate()) + 16;
     }
 
-    if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
-        availableFrames = (this->outputBufferFrames - frameOffset);
-        if (availableFrames < expectedOutputFrames) {
-            // Event-driven DAC interrupt wait: if hardware event handle exists, wait directly on the DAC interrupt
-            if (this->hAudioEvent) {
-                WaitForSingleObject(this->hAudioEvent, 20);
-                if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
-                    availableFrames = (this->outputBufferFrames - frameOffset);
-                }
-            }
-
-            if (availableFrames < expectedOutputFrames) {
-                UINT32 delta = expectedOutputFrames - availableFrames;
-                UINT32 sleepMs = (UINT32) std::ceil((double)delta * 1000.0 / (double)this->configuredSampleRate);
-                if (sleepMs < 1) sleepMs = 1;
-                return (OutputState) sleepMs;
-            }
-        }
-    } else {
-        return OutputState::FormatError;
-    }
-
-    // Now that we know we have enough space, run the resampler
+    // Step 1: Unconditionally resample and upmix the entire buffer
     if (this->resampler) {
         UINT32 inputFrames = framesToWrite;
         UINT32 maxOutputFrames = expectedOutputFrames;
@@ -624,68 +598,92 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         samples = framesToWrite * 2;
     }
 
-    // Process VST chain on post-resampled stream, chunked into targetBlockSize VST blocks
+    // Step 2: Initialize VST configuration
     bool vstEnabled = ::prefs && prefs->GetBool(PREF_VST_ENABLED, true);
     if (vstEnabled) {
         if (!this->vstChain) {
             std::string tomlPath = getVstConfigPath();
             this->vstChain = std::make_unique<VstChain>(tomlPath);
         }
-        
-        int targetBlockSize = 1024;
-        if (::prefs) {
-            std::string bsStr = getPreferenceString<std::string>(prefs, PREF_VST_BLOCK_SIZE, "1024");
-            if (bsStr == "512") targetBlockSize = 512;
-            else if (bsStr == "1024") targetBlockSize = 1024;
-            else if (bsStr == "2048") targetBlockSize = 2048;
-            else if (bsStr == "4096") targetBlockSize = 4096;
-            else if (bsStr == "Passthrough") targetBlockSize = 0;
-        }
-
-        int activeBlockSize = (targetBlockSize > 0) ? targetBlockSize : (int)framesToWrite;
-
-        if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || this->vstChain->GetCurrentBlockSize() != activeBlockSize) {
-            this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, activeBlockSize);
-        }
-
-        this->vstChain->Process(src, framesToWrite, currentChannels, targetBlockSize);
     } else {
         if (this->vstChain) {
             this->vstChain.reset();
         }
     }
 
-    // Write processed post-resampled audio directly to WASAPI render buffer
-    if (availableFrames >= framesToWrite) {
+    int activeBlockSize = 1024;
+    if (::prefs) {
+        std::string bsStr = getPreferenceString<std::string>(prefs, PREF_VST_BLOCK_SIZE, "1024");
+        if (bsStr == "512") activeBlockSize = 512;
+        else if (bsStr == "1024") activeBlockSize = 1024;
+        else if (bsStr == "2048") activeBlockSize = 2048;
+        else if (bsStr == "4096") activeBlockSize = 4096;
+        else if (bsStr == "Passthrough") activeBlockSize = (int)framesToWrite;
+    }
+    if (activeBlockSize <= 0) activeBlockSize = 1024;
+
+    if (vstEnabled && (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || this->vstChain->GetCurrentBlockSize() != activeBlockSize)) {
+        this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, activeBlockSize);
+    }
+
+    // Step 3: Loop and process chunks paced by hardware DAC
+    UINT32 offsetFrames = 0;
+    while (offsetFrames < framesToWrite) {
+        UINT32 chunkSize = framesToWrite - offsetFrames;
+        if (chunkSize > (UINT32)activeBlockSize) chunkSize = (UINT32)activeBlockSize;
+
+        // Block thread until DAC has space for chunkSize frames
+        while (true) {
+            UINT32 frameOffset = 0;
+            if (this->audioClient->GetCurrentPadding(&frameOffset) != S_OK) {
+                return OutputState::FormatError;
+            }
+            UINT32 availableFrames = (this->outputBufferFrames - frameOffset);
+            if (availableFrames >= chunkSize) {
+                break;
+            }
+            if (this->hAudioEvent) {
+                WaitForSingleObject(this->hAudioEvent, 20);
+            } else {
+                Sleep(1);
+            }
+        }
+
+        float* chunkSrc = src + (offsetFrames * currentChannels);
+        UINT32 chunkSamples = chunkSize * currentChannels;
+
+        if (vstEnabled && this->vstChain) {
+            this->vstChain->Process(chunkSrc, chunkSize, currentChannels, 0); // targetBlockSize=0 disables internal chunking
+        }
+
         BYTE *data = nullptr;
-        result = this->renderClient->GetBuffer(framesToWrite, &data);
-        if (result == S_OK) {
+        if (this->renderClient->GetBuffer(chunkSize, &data) == S_OK) {
             float vol = (float)this->volume * this->headroomMultiplier;
 
             if (this->targetFormatType == FormatFloat32) {
                 float* dst = (float*) data;
-                for (UINT32 i = 0; i < samples; ++i) dst[i] = src[i] * vol;
+                for (UINT32 i = 0; i < chunkSamples; ++i) dst[i] = chunkSrc[i] * vol;
             }
             else if (this->targetFormatType == FormatPCM32) {
                 int32_t* dst = (int32_t*) data;
-                for (UINT32 i = 0; i < samples; ++i) {
-                    double s = (double)src[i] * (double)vol;
+                for (UINT32 i = 0; i < chunkSamples; ++i) {
+                    double s = (double)chunkSrc[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = (int32_t)(s * 2147483647.0);
                 }
             }
             else if (this->targetFormatType == FormatPCM24In32) {
                 int32_t* dst = (int32_t*) data;
-                for (UINT32 i = 0; i < samples; ++i) {
-                    double s = (double)src[i] * (double)vol;
+                for (UINT32 i = 0; i < chunkSamples; ++i) {
+                    double s = (double)chunkSrc[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = ((int32_t)(s * 8388607.0)) << 8;
                 }
             }
             else if (this->targetFormatType == FormatPCM24Packed) {
                 uint8_t* dst = (uint8_t*) data;
-                for (UINT32 i = 0; i < samples; ++i) {
-                    double s = (double)src[i] * (double)vol;
+                for (UINT32 i = 0; i < chunkSamples; ++i) {
+                    double s = (double)chunkSrc[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     int32_t val = (int32_t)(s * 8388607.0);
                     dst[3 * i] = val & 0xFF;
@@ -695,20 +693,21 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             }
             else if (this->targetFormatType == FormatPCM16) {
                 int16_t* dst = (int16_t*) data;
-                for (UINT32 i = 0; i < samples; ++i) {
-                    double s = (double)src[i] * (double)vol;
+                for (UINT32 i = 0; i < chunkSamples; ++i) {
+                    double s = (double)chunkSrc[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = (int16_t)(s * 32767.0);
                 }
             }
 
-            this->renderClient->ReleaseBuffer(framesToWrite, 0);
-            provider->OnBufferProcessed(buffer);
-            return OutputState::BufferWritten;
+            this->renderClient->ReleaseBuffer(chunkSize, 0);
         }
+        
+        offsetFrames += chunkSize;
     }
 
-    return OutputState::BufferFull;
+    provider->OnBufferProcessed(buffer);
+    return OutputState::BufferWritten;
 }
 
 void WasapiExclusiveOut::Reset() {

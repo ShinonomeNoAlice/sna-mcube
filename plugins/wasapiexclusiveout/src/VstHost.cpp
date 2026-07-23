@@ -620,9 +620,22 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     context.sampleRate = currentSampleRate;
     context.projectTimeSamples = totalSamplesProcessed;
     
-    // systemTime in nanoseconds using high-precision steady_clock
+    // Calculate idealized system time based on audio stream timeline
+    int64_t idealSystemTimeNs = streamStartSystemTime + 
+        (int64_t)((double)totalSamplesProcessed * 1000000000.0 / currentSampleRate);
+    
+    // Check OS time to prevent long-term drift (e.g. if paused or stalled)
     auto now = std::chrono::steady_clock::now();
-    context.systemTime = (int64)std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    int64_t osTimeNs = (int64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    
+    // If idealized stream time drifts from OS time by more than 50ms, resync the stream anchor.
+    // This maintains perfect micro-pacing for VSTs while preventing macro-drift.
+    if (std::abs(osTimeNs - idealSystemTimeNs) > 50000000) {
+        streamStartSystemTime = osTimeNs - (int64_t)((double)totalSamplesProcessed * 1000000000.0 / currentSampleRate);
+        idealSystemTimeNs = osTimeNs;
+    }
+    
+    context.systemTime = idealSystemTimeNs;
     
     context.state = ProcessContext::kPlaying | ProcessContext::kSystemTimeValid | ProcessContext::kContTimeValid | ProcessContext::kProjectTimeMusicValid;
     context.continousTimeSamples = totalSamplesProcessed;
