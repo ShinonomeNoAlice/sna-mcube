@@ -530,14 +530,15 @@ void VstPlugin::SetupProcessing() {
 void VstPlugin::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
     if (!processor || !component) return;
     
-    if (sampleRate == this->currentSampleRate && blockSize <= this->currentBlockSize) {
+    int activeBlockSize = (blockSize > 0) ? blockSize : 1024;
+
+    if (sampleRate == this->currentSampleRate && activeBlockSize == this->currentBlockSize) {
         return;
     }
     
-    LogDebug("VstPlugin::SetSampleRateAndBlockSize(" + std::to_string(sampleRate) + ", " + std::to_string(blockSize) + ") start");
+    LogDebug("VstPlugin::SetSampleRateAndBlockSize(" + std::to_string(sampleRate) + ", " + std::to_string(activeBlockSize) + ") start");
     
     // Reset sample timing counter and anchor timestamp ONLY on sample rate change.
-    // If only block size expanded, preserve timeline continuity so visualizers don't jump back to 0.
     if (sampleRate != this->currentSampleRate) {
         totalSamplesProcessed = 0;
         streamStartSystemTime = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -545,12 +546,10 @@ void VstPlugin::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
         this->currentSampleRate = sampleRate;
     }
 
+    this->currentBlockSize = activeBlockSize;
+
     processor->setProcessing(false);
     component->setActive(false);
-    
-    int neededBlock = blockSize * 2;
-    if (neededBlock > this->currentBlockSize) this->currentBlockSize = neededBlock;
-    if (this->currentBlockSize < 16384) this->currentBlockSize = 16384;
     
     ProcessSetup setup;
     setup.processMode = kRealtime;
@@ -561,7 +560,7 @@ void VstPlugin::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
     processor->setupProcessing(setup);
     component->setActive(true);
     processor->setProcessing(true);
-    LogDebug("VstPlugin::SetSampleRateAndBlockSize() finished");
+    LogDebug("VstPlugin::SetSampleRateAndBlockSize() finished (maxSamplesPerBlock=" + std::to_string(this->currentBlockSize) + ")");
 }
 
 void VstPlugin::SavePreset(const std::string& path) {

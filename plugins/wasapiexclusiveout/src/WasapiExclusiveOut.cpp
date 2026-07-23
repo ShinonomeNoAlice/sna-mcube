@@ -631,9 +631,6 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             std::string tomlPath = getVstConfigPath();
             this->vstChain = std::make_unique<VstChain>(tomlPath);
         }
-        if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || (int)framesToWrite > this->vstChain->GetCurrentBlockSize()) {
-            this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
-        }
         
         int targetBlockSize = 1024;
         if (::prefs) {
@@ -643,6 +640,12 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             else if (bsStr == "2048") targetBlockSize = 2048;
             else if (bsStr == "4096") targetBlockSize = 4096;
             else if (bsStr == "Passthrough") targetBlockSize = 0;
+        }
+
+        int activeBlockSize = (targetBlockSize > 0) ? targetBlockSize : (int)framesToWrite;
+
+        if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || this->vstChain->GetCurrentBlockSize() != activeBlockSize) {
+            this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, activeBlockSize);
         }
 
         this->vstChain->Process(src, framesToWrite, currentChannels, targetBlockSize);
