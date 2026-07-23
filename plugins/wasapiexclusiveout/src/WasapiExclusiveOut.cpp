@@ -518,8 +518,6 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         this->mmcssHandle = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
         if (this->mmcssHandle) {
             LogInfo("[MMCSS] Audio playback thread priority elevated to 'Pro Audio'");
-        } else {
-            LogWarning("[MMCSS] Failed to elevate thread priority, error: " + std::to_string(GetLastError()));
         }
     }
 
@@ -538,157 +536,136 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
         return OutputState::FormatError;
     }
 
-    UINT32 currentChannels = (UINT32)this->configuredChannels;
-    if (currentChannels == 0) currentChannels = (UINT32)buffer->Channels();
-
-    bool consumedInputBuffer = false;
-
-    // Step 1: If resampleFifo is empty and a new audio buffer is provided, resample it into resampleFifo
-    if (this->resampleFifo.empty() && buffer && provider && buffer->Samples() > 0) {
-        float* src = buffer->BufferPointer();
-        UINT32 inputFrames = (UINT32)buffer->Samples() / (UINT32)buffer->Channels();
-        
-        UINT32 expectedOutputFrames = inputFrames;
-        if (this->resampler) {
-            expectedOutputFrames = (UINT32)((double)inputFrames * (double)this->configuredSampleRate / (double)buffer->SampleRate()) + 16;
-        }
-
-        float* resampleOut = src;
-        UINT32 resampleFrames = inputFrames;
-
-        if (this->resampler) {
-            UINT32 neededSize = expectedOutputFrames * buffer->Channels();
-            if (this->resampleBuffer.size() < neededSize) {
-                this->resampleBuffer.resize(neededSize);
-            }
-            size_t idone = 0;
-            size_t odone = 0;
-            soxr_error_t err = soxr_process(
-                (soxr_t)this->resampler,
-                src,
-                inputFrames,
-                &idone,
-                this->resampleBuffer.data(),
-                expectedOutputFrames,
-                &odone
-            );
-            if (err) {
-                LogError("soxr_process failed: " + std::string(soxr_strerror(err)));
-                return OutputState::FormatError;
-            }
-            resampleOut = this->resampleBuffer.data();
-            resampleFrames = (UINT32)odone;
-        }
-
-        // Mono to stereo upmix if needed
-        UINT32 inChannels = (UINT32)buffer->Channels();
-        if (currentChannels == 2 && inChannels == 1) {
-            UINT32 neededSize = resampleFrames * 2;
-            if (this->stereoBuffer.size() < neededSize) {
-                this->stereoBuffer.resize(neededSize);
-            }
-            float* dstStereo = this->stereoBuffer.data();
-            for (UINT32 f = 0; f < resampleFrames; ++f) {
-                float s = resampleOut[f];
-                dstStereo[2 * f] = s;
-                dstStereo[2 * f + 1] = s;
-            }
-            resampleOut = this->stereoBuffer.data();
-        }
-
-        // Append resampled audio frames to FIFO
-        size_t samplesToPush = (size_t)resampleFrames * currentChannels;
-        this->resampleFifo.insert(this->resampleFifo.end(), resampleOut, resampleOut + samplesToPush);
-
-        // Mark input buffer as processed ONLY when we consume it into empty FIFO
-        provider->OnBufferProcessed(buffer);
-        consumedInputBuffer = true;
-    }
-
-    // Step 2: Determine target hardware block size for single-block VST dispatch
-    UINT32 targetBlockSize = 1024;
-    if (::prefs) {
-        std::string bsStr = getPreferenceString<std::string>(prefs, PREF_VST_BLOCK_SIZE, "1024");
-        if (bsStr == "512") targetBlockSize = 512;
-        else if (bsStr == "1024") targetBlockSize = 1024;
-        else if (bsStr == "2048") targetBlockSize = 2048;
-        else if (bsStr == "4096") targetBlockSize = 4096;
-    }
-
-    // Step 3: Check WASAPI hardware buffer capacity
-    UINT32 frameOffset = 0;
+    HRESULT result;
     UINT32 availableFrames = 0;
+    UINT32 frameOffset = 0;
+    
+    float* src = buffer->BufferPointer();
+    UINT32 samples = (UINT32)buffer->Samples();
+    UINT32 framesToWrite = samples / (UINT32)buffer->Channels();
+
+    // Calculate how many frames we expect to output from resampling
+    UINT32 expectedOutputFrames = framesToWrite;
+    if (this->resampler) {
+        expectedOutputFrames = (UINT32)((double)framesToWrite * (double)this->configuredSampleRate / (double)buffer->SampleRate()) + 16;
+    }
+
     if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
         availableFrames = (this->outputBufferFrames - frameOffset);
+        if (availableFrames < expectedOutputFrames) {
+            // Event-driven DAC interrupt wait: if hardware event handle exists, wait directly on the DAC interrupt
+            if (this->hAudioEvent) {
+                WaitForSingleObject(this->hAudioEvent, 20);
+                if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
+                    availableFrames = (this->outputBufferFrames - frameOffset);
+                }
+            }
+
+            if (availableFrames < expectedOutputFrames) {
+                UINT32 delta = expectedOutputFrames - availableFrames;
+                UINT32 sleepMs = (UINT32) std::ceil((double)delta * 1000.0 / (double)this->configuredSampleRate);
+                if (sleepMs < 1) sleepMs = 1;
+                return (OutputState) sleepMs;
+            }
+        }
     } else {
         return OutputState::FormatError;
     }
 
-    // If WASAPI doesn't have space for a block, wait for hardware interrupt event
-    if (availableFrames < targetBlockSize) {
-        if (this->hAudioEvent) {
-            WaitForSingleObject(this->hAudioEvent, 20);
-            if (this->audioClient->GetCurrentPadding(&frameOffset) == S_OK) {
-                availableFrames = (this->outputBufferFrames - frameOffset);
-            }
+    // Now that we know we have enough space, run the resampler
+    if (this->resampler) {
+        UINT32 inputFrames = framesToWrite;
+        UINT32 maxOutputFrames = expectedOutputFrames;
+        UINT32 channels = (UINT32)buffer->Channels();
+        UINT32 neededSize = maxOutputFrames * channels;
+        
+        if (this->resampleBuffer.size() < neededSize) {
+            this->resampleBuffer.resize(neededSize);
         }
-        if (availableFrames < targetBlockSize) {
-            UINT32 delta = targetBlockSize - availableFrames;
-            UINT32 sleepMs = (UINT32) std::ceil((double)delta * 1000.0 / (double)this->configuredSampleRate);
-            if (sleepMs < 1) sleepMs = 1;
-            return (OutputState) sleepMs;
+        
+        size_t idone = 0;
+        size_t odone = 0;
+        soxr_error_t err = soxr_process(
+            (soxr_t)this->resampler,
+            buffer->BufferPointer(),
+            inputFrames,
+            &idone,
+            this->resampleBuffer.data(),
+            maxOutputFrames,
+            &odone
+        );
+        if (err) {
+            LogError("soxr_process failed: " + std::string(soxr_strerror(err)));
+            return OutputState::FormatError;
+        }
+        
+        src = this->resampleBuffer.data();
+        framesToWrite = (UINT32)odone;
+        samples = framesToWrite * channels;
+    }
+    
+    UINT32 inChannels = (UINT32)buffer->Channels();
+    UINT32 outChannels = (UINT32)this->configuredChannels;
+    UINT32 currentChannels = inChannels;
+
+    if (outChannels == 2 && inChannels == 1) {
+        UINT32 neededSize = framesToWrite * 2;
+        if (this->stereoBuffer.size() < neededSize) {
+            this->stereoBuffer.resize(neededSize);
+        }
+        float* dstStereo = this->stereoBuffer.data();
+        for (UINT32 f = 0; f < framesToWrite; ++f) {
+            float s = src[f];
+            dstStereo[2 * f] = s;
+            dstStereo[2 * f + 1] = s;
+        }
+        src = this->stereoBuffer.data();
+        currentChannels = 2;
+        samples = framesToWrite * 2;
+    }
+
+    // Process VST chain on post-resampled stream, chunked into targetBlockSize VST blocks
+    bool vstEnabled = ::prefs && prefs->GetBool(PREF_VST_ENABLED, true);
+    if (vstEnabled) {
+        if (!this->vstChain) {
+            std::string tomlPath = getVstConfigPath();
+            this->vstChain = std::make_unique<VstChain>(tomlPath);
+        }
+        if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || (int)framesToWrite > this->vstChain->GetCurrentBlockSize()) {
+            this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, framesToWrite);
+        }
+        
+        int targetBlockSize = 1024;
+        if (::prefs) {
+            std::string bsStr = getPreferenceString<std::string>(prefs, PREF_VST_BLOCK_SIZE, "1024");
+            if (bsStr == "512") targetBlockSize = 512;
+            else if (bsStr == "1024") targetBlockSize = 1024;
+            else if (bsStr == "2048") targetBlockSize = 2048;
+            else if (bsStr == "4096") targetBlockSize = 4096;
+            else if (bsStr == "Passthrough") targetBlockSize = 0;
+        }
+
+        this->vstChain->Process(src, framesToWrite, currentChannels, targetBlockSize);
+    } else {
+        if (this->vstChain) {
+            this->vstChain.reset();
         }
     }
 
-    // Step 4: Fill WASAPI hardware render buffer from resampleFifo using 1024-frame VST blocks
-    UINT32 totalWrittenFrames = 0;
-
-    while (totalWrittenFrames < availableFrames && !this->resampleFifo.empty()) {
-        size_t fifoFrames = this->resampleFifo.size() / currentChannels;
-        if (fifoFrames == 0) break;
-
-        UINT32 writeFrames = (std::min)((UINT32)fifoFrames, targetBlockSize);
-        UINT32 spaceRemaining = availableFrames - totalWrittenFrames;
-        writeFrames = (std::min)(writeFrames, spaceRemaining);
-        if (writeFrames == 0) break;
-
-        UINT32 writeSamples = writeFrames * currentChannels;
-        if (this->vstBlockBuffer.size() < writeSamples) {
-            this->vstBlockBuffer.resize(writeSamples);
-        }
-        memcpy(this->vstBlockBuffer.data(), this->resampleFifo.data(), writeSamples * sizeof(float));
-
-        // Process VST chain on single post-resampled block (at 352.8 kHz / 192 kHz)
-        bool vstEnabled = ::prefs && prefs->GetBool(PREF_VST_ENABLED, true);
-        if (vstEnabled) {
-            if (!this->vstChain) {
-                std::string tomlPath = getVstConfigPath();
-                this->vstChain = std::make_unique<VstChain>(tomlPath);
-            }
-            if (this->vstChain->GetCurrentSampleRate() != this->configuredSampleRate || (int)writeFrames > this->vstChain->GetCurrentBlockSize()) {
-                this->vstChain->SetSampleRateAndBlockSize(this->configuredSampleRate, writeFrames);
-            }
-            this->vstChain->Process(this->vstBlockBuffer.data(), writeFrames, currentChannels, writeFrames);
-        } else {
-            if (this->vstChain) {
-                this->vstChain.reset();
-            }
-        }
-
-        // Write processed audio block to WASAPI hardware render buffer
+    // Write processed post-resampled audio directly to WASAPI render buffer
+    if (availableFrames >= framesToWrite) {
         BYTE *data = nullptr;
-        HRESULT result = this->renderClient->GetBuffer(writeFrames, &data);
+        result = this->renderClient->GetBuffer(framesToWrite, &data);
         if (result == S_OK) {
             float vol = (float)this->volume * this->headroomMultiplier;
-            float* src = this->vstBlockBuffer.data();
 
             if (this->targetFormatType == FormatFloat32) {
                 float* dst = (float*) data;
-                for (UINT32 i = 0; i < writeSamples; ++i) dst[i] = src[i] * vol;
+                for (UINT32 i = 0; i < samples; ++i) dst[i] = src[i] * vol;
             }
             else if (this->targetFormatType == FormatPCM32) {
                 int32_t* dst = (int32_t*) data;
-                for (UINT32 i = 0; i < writeSamples; ++i) {
+                for (UINT32 i = 0; i < samples; ++i) {
                     double s = (double)src[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = (int32_t)(s * 2147483647.0);
@@ -696,7 +673,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             }
             else if (this->targetFormatType == FormatPCM24In32) {
                 int32_t* dst = (int32_t*) data;
-                for (UINT32 i = 0; i < writeSamples; ++i) {
+                for (UINT32 i = 0; i < samples; ++i) {
                     double s = (double)src[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = ((int32_t)(s * 8388607.0)) << 8;
@@ -704,7 +681,7 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             }
             else if (this->targetFormatType == FormatPCM24Packed) {
                 uint8_t* dst = (uint8_t*) data;
-                for (UINT32 i = 0; i < writeSamples; ++i) {
+                for (UINT32 i = 0; i < samples; ++i) {
                     double s = (double)src[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     int32_t val = (int32_t)(s * 8388607.0);
@@ -715,24 +692,20 @@ OutputState WasapiExclusiveOut::Play(IBuffer *buffer, IBufferProvider *provider)
             }
             else if (this->targetFormatType == FormatPCM16) {
                 int16_t* dst = (int16_t*) data;
-                for (UINT32 i = 0; i < writeSamples; ++i) {
+                for (UINT32 i = 0; i < samples; ++i) {
                     double s = (double)src[i] * (double)vol;
                     if (s > 1.0) s = 1.0; else if (s < -1.0) s = -1.0;
                     dst[i] = (int16_t)(s * 32767.0);
                 }
             }
 
-            this->renderClient->ReleaseBuffer(writeFrames, 0);
-
-            // Erase written samples from FIFO
-            this->resampleFifo.erase(this->resampleFifo.begin(), this->resampleFifo.begin() + writeSamples);
-            totalWrittenFrames += writeFrames;
-        } else {
-            break;
+            this->renderClient->ReleaseBuffer(framesToWrite, 0);
+            provider->OnBufferProcessed(buffer);
+            return OutputState::BufferWritten;
         }
     }
 
-    return consumedInputBuffer ? OutputState::BufferWritten : OutputState::BufferFull;
+    return OutputState::BufferFull;
 }
 
 void WasapiExclusiveOut::Reset() {
