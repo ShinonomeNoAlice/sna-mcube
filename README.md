@@ -35,9 +35,7 @@ The compiled output will be generated under the `build/` directory:
 - SoX Resampler Shared Library: `build\bin\x64\Release\soxr.dll`
 - WASAPI Exclusive Mode Tester: `build\bin\x64\Release\tools\wasapi_em_tester.exe`
 
-Then copy/symlink:
-1. `wasapiexclusiveout.dll` into your `musikcube`'s `plugins/` folder.
-2. `soxr.dll` into your `musikcube` root folder (where `musikcube.exe` is located).
+Then copy/symlink `wasapiexclusiveout.dll` and `soxr.dll` into your `musikcube`'s `plugins/` folder.
 
 ## Stuffs to do still
 
