@@ -41,6 +41,7 @@ public:
 
     void Process(float** inputs, float** outputs, int numSamples, int numChannels);
     void SetSampleRateAndBlockSize(double sampleRate, int blockSize);
+    void Reset();
     
     void CheckUiState(bool showUi);
     void OnParameterEdit(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue value);
@@ -111,6 +112,7 @@ public:
 
     void Process(float* interleavedBuffer, int numSamples, int numChannels, int targetBlockSize = 0);
     void SetSampleRateAndBlockSize(double sampleRate, int blockSize);
+    void Reset();
     double GetCurrentSampleRate() const { return currentSampleRate; }
     int GetCurrentBlockSize() const { return currentBlockSize; }
 

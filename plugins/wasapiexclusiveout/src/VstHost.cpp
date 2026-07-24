@@ -1237,3 +1237,20 @@ void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels
         }
     }
 }
+
+void VstPlugin::Reset() {
+    if (processor) {
+        processor->setProcessing(false);
+        processor->setProcessing(true);
+    }
+    totalSamplesProcessed = 0;
+    streamStartSystemTime = (int64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void VstChain::Reset() {
+    std::lock_guard<std::mutex> lock(chainMutex);
+    for (auto& p : plugins) {
+        if (p) p->Reset();
+    }
+}

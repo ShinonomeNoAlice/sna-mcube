@@ -496,7 +496,16 @@ void WasapiExclusiveOut::Stop() {
     this->state = StateStopped;
 
     Lock lock(this->stateMutex);
-    this->Reset();
+    if (this->audioClient) {
+        this->audioClient->Stop();
+        this->audioClient->Reset();
+    }
+    if (this->resampler) {
+        soxr_clear((soxr_t)this->resampler);
+    }
+    if (this->vstChain) {
+        this->vstChain->Reset();
+    }
 }
 
 void WasapiExclusiveOut::Drain() {
