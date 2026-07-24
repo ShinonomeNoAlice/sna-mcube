@@ -31,7 +31,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <OutDir>$(SolutionDir)build\bin\$(Platform)\$(Configuration)\tools\</OutDir>
+    <OutDir>$(SolutionDir)build\bin\$(Platform)\$(Configuration)\tools\wasapi_em_tester\</OutDir>
     <IntDir>$(SolutionDir)build\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
