@@ -72,5 +72,6 @@ Ah. That's why there's...
 ### The TOML manager
 
 `tools/vst_toml_manager` has you covered. If you have `uv`, just
-`uv run vst-toml-manager`. Saves you the hassle of manually typing things on
-TOML. Trust me, you don't want that hell.
+`uv run vst-toml-manager` and it will create a blank TOML for you, as well as
+lets you manage things in a nice TUI. Saves you the hassle of manually typing
+things on TOML. Trust me, you don't want that hell.
