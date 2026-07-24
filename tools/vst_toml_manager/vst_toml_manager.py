@@ -696,6 +696,9 @@ class VstManagerApp(App):
             except Exception as e:
                 self.notify(f"Failed to load preset: {e}", severity="error")
 
-if __name__ == "__main__":
+def main():
     app = VstManagerApp()
     app.run()
+
+if __name__ == "__main__":
+    main()
