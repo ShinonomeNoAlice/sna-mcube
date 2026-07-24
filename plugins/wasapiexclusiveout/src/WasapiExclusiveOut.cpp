@@ -57,14 +57,12 @@
 #define PREF_DEVICE_ID "device_id"
 #define PREF_ENDPOINT_ROUTING "enable_audio_endpoint_routing"
 #define PREF_BUFFER_LENGTH_SECONDS "buffer_length_seconds"
-#define PREF_ALLOW_DECODER_RESAMPLING "allow_decoder_resampling"
 #define PREF_DAC_SETTLING_MS "dac_settling_ms"
 #define PREF_RELEASE_ON_PAUSE "release_device_on_pause"
 #define PREF_ENABLE_TRACE_LOGGING "enable_trace_logging"
 #define PREF_HEADROOM_DB "headroom_db"
 #define PREF_SOXR_OVERSAMPLING "soxr_oversampling"
 #define PREF_SOXR_PRESET "soxr_preset"
-#define PREF_SOXR_HEADROOM_DB "soxr_headroom_db"
 #define PREF_SOXR_CUSTOM_PRECISION "soxr_custom_precision_bits"
 #define PREF_SOXR_CUSTOM_PHASE "soxr_custom_phase_response_pct"
 #define PREF_SOXR_CUSTOM_PASSBAND_END "soxr_custom_passband_end"
@@ -293,7 +291,6 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     schema->AddBool(PREF_ENDPOINT_ROUTING, false);
     schema->AddDouble(PREF_BUFFER_LENGTH_SECONDS, 1.0, 2, 0.05, 5.0);
     schema->AddDouble(PREF_HEADROOM_DB, 0.0, 1, -12.0, 0.0);
-    schema->AddBool(PREF_ALLOW_DECODER_RESAMPLING, false);
     schema->AddInt(PREF_DAC_SETTLING_MS, 0, 0, 5000);
     schema->AddBool(PREF_RELEASE_ON_PAUSE, false);
 
@@ -324,10 +321,6 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
 
 static bool audioRoutingEnabled() {
     return ::prefs && prefs->GetBool(PREF_ENDPOINT_ROUTING, false);
-}
-
-static bool allowDecoderResampling() {
-    return ::prefs && prefs->GetBool(PREF_ALLOW_DECODER_RESAMPLING, false);
 }
 
 class NotificationClient : public IMMNotificationClient {
@@ -896,25 +889,7 @@ found_or_done:
 }
 
 int WasapiExclusiveOut::GetDefaultSampleRate() {
-    int result = -1;
-    Lock lock(this->stateMutex);
-    if (allowDecoderResampling()) {
-        HRESULT hrCo = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        this->InitializeAudioClient();
-        if (this->audioClient) {
-            WAVEFORMATEX* deviceFormat = nullptr;
-            audioClient->GetMixFormat(&deviceFormat);
-            if (deviceFormat) {
-                result = deviceFormat->nSamplesPerSec;
-                CoTaskMemFree(deviceFormat);
-            }
-        }
-        this->Reset();
-        if (SUCCEEDED(hrCo)) {
-            CoUninitialize();
-        }
-    }
-    return result;
+    return -1;
 }
 
 bool WasapiExclusiveOut::InitializeAudioClient() {
@@ -1655,9 +1630,6 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     double headroomDb = 0.0;
     if (::prefs) {
         headroomDb = ::prefs->GetDouble(PREF_HEADROOM_DB, 0.0);
-        if (headroomDb == 0.0) {
-            headroomDb = ::prefs->GetDouble(PREF_SOXR_HEADROOM_DB, 0.0);
-        }
     }
     this->headroomMultiplier = (float)std::pow(10.0, headroomDb / 20.0);
 
