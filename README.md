@@ -14,16 +14,21 @@ My collection of plugins for `musikcube` for my own twisted use cases that are b
 
 ## Content
 
-1. WASAPI exclusive mode (EM) + `libsoxr`resampling.
+1. WASAPI exclusive mode (EM) + `libsoxr` resampling + VST3 host.
     - I have tested this only with my DAC (FiiO K11 R2R, firmware `M79`) which tops out at PCM 32/384. 
 2.  WASAPI EM tester.
-    - You have [Eugene Muzychenko's VAC](https://vac.muzychenko.net/en/) to thank for this.
+    - You have [Eugene Muzychenko's VAC](https://vac.muzychenko.net/en/) to thank for this. Whether I meant that genuinely or sarcastically is up to interpretation.
+
+For documentations of the plugin's configs, check [the instruction file](https://github.com/ShinonomeNoAlice/sna-mcube/blob/master/docs/00-Instructions.md). 
 
 ## Binary
 
-Everything should be in [Release](https://github.com/ShinonomeNoalice/sna-mcube/releases/latest/). Eventually this will be done via CI/CD to keep everything up-to-date to the bleeding edge. Eventually.
+Everything should be in [Release](https://github.com/ShinonomeNoalice/sna-mcube/releases/latest/). From `v0.4.1` you should just be able to extract everything into your `musikcube` installation root.
+
+Eventually I'll configure CI/CD to keep everything up-to-date to the bleeding edge. Eventually.
 
 ## Building
+
 Please follow [upstream's instruction](https://github.com/clangen/musikcube/wiki/building) for tools needed (Visual Studio 2022 / MSBuild). You shouldn't need any additional dependencies.
 ```sh
 $ git clone --recursive https://github.com/ShinonomeNoAlice/sna-mcube
