@@ -95,7 +95,7 @@ static std::string GetLogPath() {
     return "";
 }
 
-static void LogInfo(const std::string& message) {
+void LogInfo(const std::string& message) {
     if (::debug) {
         ::debug->Info("WasapiExclusiveOut", message.c_str());
     }
@@ -110,7 +110,7 @@ static void LogInfo(const std::string& message) {
     }
 }
 
-static void LogWarning(const std::string& message) {
+void LogWarning(const std::string& message) {
     if (::debug) {
         ::debug->Warning("WasapiExclusiveOut", message.c_str());
     }
@@ -125,7 +125,7 @@ static void LogWarning(const std::string& message) {
     }
 }
 
-static void LogError(const std::string& message) {
+void LogError(const std::string& message) {
     if (::debug) {
         ::debug->Error("WasapiExclusiveOut", message.c_str());
     }
@@ -138,7 +138,7 @@ static void LogError(const std::string& message) {
     }
 }
 
-static void LogDebug(const std::string& message) {
+void LogDebug(const std::string& message) {
     if (traceLoggingEnabled()) {
         std::string path = GetLogPath();
         if (path.size() > 0) {

@@ -35,19 +35,6 @@ static std::wstring utf8ToUtf16(const std::string& utf8str) {
     return utf16str;
 }
 
-static void LogDebug(const std::string& msg) {
-    char* appdata = nullptr;
-    size_t len = 0;
-    if (_dupenv_s(&appdata, &len, "APPDATA") == 0 && appdata != nullptr) {
-        std::string logPath = std::string(appdata) + "\\musikcube\\wasapiexclusive_debug.txt";
-        free(appdata);
-        std::ofstream log(logPath, std::ios::app);
-        if (log) {
-            log << "[VST] " << msg << std::endl;
-        }
-    }
-}
-
 // Simple in-memory implementation of IBStream for VST3 component-to-controller state sync
 class MemoryStreamHelper : public Steinberg::IBStream {
 private:
@@ -978,7 +965,7 @@ void VstChain::SavePluginState(VstPlugin* plugin) {
     
     // Update the TOML config file
     try {
-        LogDebug("Reading TOML to update preset path...");
+        LogInfo("[VST] Reading TOML to update preset path (" + configPath + ")...");
         toml::table config = toml::parse_file(configPath);
         auto chain = config["chain"].as_array();
         if (chain && (plugin->GetOrderIndex() - 1) < (int)chain->size()) {
@@ -990,11 +977,11 @@ void VstChain::SavePluginState(VstPlugin* plugin) {
             if (ofs) {
                 ofs << config;
                 ofs.close();
-                LogDebug("TOML config updated with new preset path: " + presetPath);
+                LogInfo("[VST] TOML config (" + configPath + ") updated with new preset path: " + presetPath);
             }
         }
     } catch (const std::exception& e) {
-        LogDebug("Failed to update TOML config: " + std::string(e.what()));
+        LogError("[VST] Failed to update TOML config (" + configPath + "): " + std::string(e.what()));
     }
 }
 
@@ -1003,25 +990,25 @@ void VstChain::ReloadConfig() {
     std::lock_guard<std::mutex> lock(chainMutex);
 
     if (configPath.empty()) {
-        LogDebug("Config path is empty, clearing plugins");
+        LogWarning("[VST] Config path is empty, clearing plugins");
         plugins.clear();
         return;
     }
 
     if (!std::filesystem::exists(configPath)) {
-        LogDebug("Config file does not exist, clearing plugins: " + configPath);
+        LogInfo("[VST] Config file does not exist, clearing plugins: " + configPath);
         plugins.clear();
         return;
     }
 
     try {
-        LogDebug("Parsing TOML file...");
+        LogInfo("[VST] Parsing TOML file: " + configPath);
         toml::table config = toml::parse_file(configPath);
         auto chain = config["chain"].as_array();
         
         if (chain) {
             size_t newSize = chain->size();
-            LogDebug("Found chain array, count: " + std::to_string(newSize));
+            LogInfo("[VST] Found chain array in " + configPath + ", count: " + std::to_string(newSize));
             
             std::vector<std::unique_ptr<VstPlugin>> newPlugins;
             
@@ -1052,29 +1039,29 @@ void VstChain::ReloadConfig() {
                     p->CheckUiState(showUi);
                     newPlugins.push_back(std::move(p));
                 } else {
-                    LogDebug("Delta reload: Instantiating new plugin at index " + std::to_string(i) + ": " + path);
+                    LogInfo("[VST] Delta reload: Instantiating new plugin at index " + std::to_string(i) + ": " + path);
                     auto p = std::make_unique<VstPlugin>(path, preset, showUi, (int)(i + 1), windowTitle, this);
                     p->SetAutoloadEnabled(autoload);
                     p->SetBypassed(bypass);
                     if (p->Load()) {
                         p->SetSampleRateAndBlockSize(currentSampleRate, currentBlockSize);
                         newPlugins.push_back(std::move(p));
-                        LogDebug("New plugin added to chain");
+                        LogInfo("[VST] New plugin added to chain: " + path);
                     } else {
-                        LogDebug("Plugin load failed: " + path);
+                        LogError("[VST] Plugin load failed: " + path);
                     }
                 }
             }
             
             // Remaining old plugins are automatically cleaned up when old plugins vector is replaced
             plugins = std::move(newPlugins);
-            LogDebug("Config delta reload finished successfully");
+            LogInfo("[VST] Config delta reload finished successfully for " + configPath);
         } else {
-            LogDebug("No chain array found in TOML, clearing plugins");
+            LogWarning("[VST] No chain array found in TOML (" + configPath + "), clearing plugins");
             plugins.clear();
         }
     } catch (const std::exception& e) {
-        LogDebug("Exception caught during TOML parse/load: " + std::string(e.what()));
+        LogError("[VST] Exception caught during TOML parse/load (" + configPath + "): " + std::string(e.what()));
     }
     LogDebug("VstChain::ReloadConfig() finish");
 }
