@@ -433,6 +433,10 @@ WasapiExclusiveOut::WasapiExclusiveOut()
 }
 
 WasapiExclusiveOut::~WasapiExclusiveOut() {
+    if (this->mmcssHandle) {
+        AvRevertMmThreadCharacteristics(this->mmcssHandle);
+        this->mmcssHandle = nullptr;
+    }
     timeEndPeriod(1);
 }
 
@@ -743,11 +747,6 @@ void WasapiExclusiveOut::Reset() {
         this->device->Release();
     }
 
-    if (this->mmcssHandle) {
-        AvRevertMmThreadCharacteristics(this->mmcssHandle);
-        this->mmcssHandle = nullptr;
-    }
-
     if (this->hAudioEvent) {
         CloseHandle(this->hAudioEvent);
         this->hAudioEvent = nullptr;
@@ -758,13 +757,7 @@ void WasapiExclusiveOut::Reset() {
     this->audioClient = nullptr;
     this->device = nullptr;
 
-    this->configuredSampleRate = 0;
-    this->configuredChannels = 0;
-    this->configuredInputChannels = 0;
-    this->rate = 0;
     this->latency = 0;
-
-    ZeroMemory(&waveFormat, sizeof(WAVEFORMATEXTENSIBLE));
 }
 
 double WasapiExclusiveOut::Latency() {
