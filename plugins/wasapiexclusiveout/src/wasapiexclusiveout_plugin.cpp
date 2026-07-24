@@ -43,8 +43,8 @@ class WasapiExclusivePlugin : public musik::core::sdk::IPlugin {
         void Release() override { delete this; }
         const char* Name() override { return "Wasapi Exclusive IOutput"; }
         const char* Version() override { return MUSIKCUBE_VERSION_WITH_COMMIT_HASH; }
-        const char* Author() override { return "clangen"; }
-        const char* Guid() override { return "623cb3c2-0002-49cd-9410-5207cb3cfd4b"; }
+        const char* Author() override { return "clangen (original), ShinonomeNoAlice (modified)"; }
+        const char* Guid() override { return "7fc8bc3d-422a-48dc-8cdf-6b6572e898e6"; }
         bool Configurable() override { return false; }
         void Configure() override { }
         void Reload() override { }

@@ -1,1 +1,2 @@
-- `soxr` - GNU LGPL v2.1 - <https://github.com/chirlu/soxr> - commit 945b592b70470e29f917f4de89b4281fbbd540c0 (submodule submodules/soxr).
+- `soxr` - GNU LGPL v2.1 - <https://github.com/chirlu/soxr> - commit `945b592b70470e29f917f4de89b4281fbbd540c0` (submodule submodules/soxr).
+- [Upstream WASAPI SM implementation](https://github.com/clangen/musikcube/tree/master/src/plugins/wasapiout) - 3-Clause BSD - commit `0d4f3b0f274b566103b83f0ee07538b102508299` (portions of [/plugins/wasapiexclusiveout](https://github.com/ShinonomeNoAlice/sna-mcube/tree/master/plugins/wasapiexclusiveout))
