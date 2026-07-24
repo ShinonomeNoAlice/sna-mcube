@@ -752,7 +752,7 @@ void VstPlugin::CheckUiState(bool showUi) {
             wTitle = utf8ToUtf16(customTitle);
         } else {
             char indexStr[16];
-            sprintf(indexStr, "%02d", orderIndex);
+            sprintf_s(indexStr, "%02d", orderIndex);
             std::string autoTitle = std::string(indexStr) + " - " + (vstName.empty() ? "VST3 Plugin" : vstName);
             wTitle = utf8ToUtf16(autoTitle);
         }
