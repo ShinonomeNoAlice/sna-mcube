@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{a78be652-aa1b-4b8b-8d03-ccecb9bf3304}</ProjectGuid>
+    <ProjectGuid>{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}</ProjectGuid>
     <RootNamespace>wasapiexclusiveout</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>

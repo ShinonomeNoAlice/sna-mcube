@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{12345678-1234-1234-1234-1234567890AB}</ProjectGuid>
+    <ProjectGuid>{7FBD8780-A148-4AB5-BAED-496D6453CA78}</ProjectGuid>
     <RootNamespace>wasapi_em_tester</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>

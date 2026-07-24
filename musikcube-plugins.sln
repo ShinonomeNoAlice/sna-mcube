@@ -2,11 +2,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "soxr", "3rdparty\soxr\soxr.vcxproj", "{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "soxr", "3rdparty\soxr\soxr.vcxproj", "{A92A2666-4C2D-43AA-8CDB-4158C66C8779}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wasapiexclusiveout", "plugins\wasapiexclusiveout\wasapiexclusiveout.vcxproj", "{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wasapi_em_tester", "tools\wasapi_em_tester\wasapi_em_tester.vcxproj", "{12345678-1234-1234-1234-1234567890AB}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "wasapi_em_tester", "tools\wasapi_em_tester\wasapi_em_tester.vcxproj", "{7FBD8780-A148-4AB5-BAED-496D6453CA78}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -16,14 +16,14 @@ Global
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Debug|Win32.ActiveCfg = Debug|Win32
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Debug|Win32.Build.0 = Debug|Win32
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Debug|x64.ActiveCfg = Debug|x64
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Debug|x64.Build.0 = Debug|x64
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Release|Win32.ActiveCfg = Release|Win32
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Release|Win32.Build.0 = Release|Win32
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Release|x64.ActiveCfg = Release|x64
-		{A8B2C4F6-1234-4A8E-8A3B-CDEB7890ABCD}.Release|x64.Build.0 = Release|x64
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Debug|Win32.Build.0 = Debug|Win32
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Debug|x64.ActiveCfg = Debug|x64
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Debug|x64.Build.0 = Debug|x64
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Release|Win32.ActiveCfg = Release|Win32
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Release|Win32.Build.0 = Release|Win32
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Release|x64.ActiveCfg = Release|x64
+		{A92A2666-4C2D-43AA-8CDB-4158C66C8779}.Release|x64.Build.0 = Release|x64
 		{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}.Debug|Win32.ActiveCfg = Debug|Win32
 		{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}.Debug|Win32.Build.0 = Debug|Win32
 		{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}.Debug|x64.ActiveCfg = Debug|x64
@@ -32,14 +32,14 @@ Global
 		{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}.Release|Win32.Build.0 = Release|Win32
 		{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}.Release|x64.ActiveCfg = Release|x64
 		{A78BE652-AA1B-4B8B-8D03-CCECB9BF3304}.Release|x64.Build.0 = Release|x64
-		{12345678-1234-1234-1234-1234567890AB}.Debug|Win32.ActiveCfg = Debug|x64
-		{12345678-1234-1234-1234-1234567890AB}.Debug|Win32.Build.0 = Debug|x64
-		{12345678-1234-1234-1234-1234567890AB}.Debug|x64.ActiveCfg = Debug|x64
-		{12345678-1234-1234-1234-1234567890AB}.Debug|x64.Build.0 = Debug|x64
-		{12345678-1234-1234-1234-1234567890AB}.Release|Win32.ActiveCfg = Release|x64
-		{12345678-1234-1234-1234-1234567890AB}.Release|Win32.Build.0 = Release|x64
-		{12345678-1234-1234-1234-1234567890AB}.Release|x64.ActiveCfg = Release|x64
-		{12345678-1234-1234-1234-1234567890AB}.Release|x64.Build.0 = Release|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Debug|Win32.ActiveCfg = Debug|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Debug|Win32.Build.0 = Debug|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Debug|x64.ActiveCfg = Debug|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Debug|x64.Build.0 = Debug|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Release|Win32.ActiveCfg = Release|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Release|Win32.Build.0 = Release|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Release|x64.ActiveCfg = Release|x64
+		{7FBD8780-A148-4AB5-BAED-496D6453CA78}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
