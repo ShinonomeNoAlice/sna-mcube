@@ -788,6 +788,9 @@ void VstPlugin::CheckUiState(bool showUi) {
         SetTimer(hwnd, 1, 15, nullptr);
 
         ShowWindow(hwnd, SW_SHOW);
+        if (view) {
+            view->onFocus(true);
+        }
     } else if (!showUi && hwnd) {
         LogDebug("Closing UI window...");
         DestroyWindow(hwnd);
@@ -801,6 +804,50 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
     }
     
+    if (uMsg == WM_SETFOCUS) {
+        VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        if (plugin && plugin->view) {
+            plugin->view->onFocus(true);
+        }
+        return 0;
+    }
+
+    if (uMsg == WM_KILLFOCUS) {
+        VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        if (plugin && plugin->view) {
+            plugin->view->onFocus(false);
+        }
+        return 0;
+    }
+
+    if (uMsg == WM_ACTIVATE) {
+        VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        if (plugin && plugin->view) {
+            bool active = (LOWORD(wParam) != WA_INACTIVE);
+            plugin->view->onFocus(active ? true : false);
+        }
+        return 0;
+    }
+
+    if (uMsg == WM_MOUSEACTIVATE) {
+        VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        if (plugin && plugin->view) {
+            plugin->view->onFocus(true);
+        }
+        return MA_ACTIVATE;
+    }
+
+    if (uMsg == WM_ERASEBKGND) {
+        return 1;
+    }
+
+    if (uMsg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+
     if (uMsg == WM_SIZING) {
         VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
         if (plugin && plugin->view && plugin->viewAttached) {
@@ -871,18 +918,21 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 
     if (uMsg == WM_TIMER) {
         VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
-        if (plugin && plugin->controller) {
-            std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> changes;
-            {
-                std::unique_lock<std::mutex> lock(plugin->outputParamMutex, std::defer_lock);
-                if (lock.try_lock()) {
-                    changes = plugin->latestOutputParams;
-                    plugin->latestOutputParams.clear();
+        if (plugin) {
+            if (plugin->controller) {
+                std::map<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue> changes;
+                {
+                    std::unique_lock<std::mutex> lock(plugin->outputParamMutex, std::defer_lock);
+                    if (lock.try_lock()) {
+                        changes = plugin->latestOutputParams;
+                        plugin->latestOutputParams.clear();
+                    }
+                }
+                for (const auto& change : changes) {
+                    plugin->controller->setParamNormalized(change.first, change.second);
                 }
             }
-            for (const auto& change : changes) {
-                plugin->controller->setParamNormalized(change.first, change.second);
-            }
+            RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
         }
         return 0;
     }
