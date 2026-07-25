@@ -916,7 +916,7 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         }
     }
 
-    if (uMsg == WM_TIMER) {
+    if (uMsg == WM_TIMER && wParam == 1) {
         VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
         if (plugin) {
             if (plugin->controller) {
@@ -932,7 +932,6 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
                     plugin->controller->setParamNormalized(change.first, change.second);
                 }
             }
-            RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
         }
         return 0;
     }
@@ -1144,7 +1143,7 @@ void VstChain::WatchThread() {
             break;
         }
 
-        if (msg.message == WM_TIMER && msg.hwnd == nullptr) {
+        if (msg.message == WM_TIMER && msg.hwnd == nullptr && msg.wParam == timerId) {
             WIN32_FILE_ATTRIBUTE_DATA newData;
             if (GetFileAttributesExW(wConfigPath.c_str(), GetFileExInfoStandard, &newData)) {
                 if (CompareFileTime(&lastData.ftLastWriteTime, &newData.ftLastWriteTime) != 0) {
