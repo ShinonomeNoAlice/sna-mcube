@@ -93,6 +93,7 @@ class WasapiExclusiveOut : public IOutput {
         };
 
         bool Configure(IBuffer *buffer);
+        bool CheckPreferencesChanged();
         bool InitializeAudioClient();
         HRESULT InitializeAudioClientWithEvent(REFERENCE_TIME bufferDuration, REFERENCE_TIME periodicity, WAVEFORMATEX* format);
         void Reset();
@@ -114,6 +115,8 @@ class WasapiExclusiveOut : public IOutput {
         int configuredSampleRate;
         int configuredChannels;
         int configuredInputChannels;
+        bool pendingReconfig;
+        double cachedBufferLength;
         std::string cachedOversampling;
         std::string cachedSoxrPreset;
         double cachedHeadroom;

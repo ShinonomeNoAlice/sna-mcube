@@ -422,6 +422,8 @@ WasapiExclusiveOut::WasapiExclusiveOut()
 , configuredSampleRate(0)
 , configuredChannels(0)
 , configuredInputChannels(0)
+, pendingReconfig(false)
+, cachedBufferLength(0.0)
 , cachedOversampling("")
 , cachedSoxrPreset("")
 , cachedHeadroom(0.0)
@@ -484,7 +486,12 @@ void WasapiExclusiveOut::Resume() {
 
     Lock lock(this->stateMutex);
 
-    if (this->audioClient) {
+    if (this->pendingReconfig || this->CheckPreferencesChanged()) {
+        this->pendingReconfig = true;
+        LogInfo("[WASAPI] Preference change detected prior to Resume. Resetting audio client for clean renegotiation.");
+        this->Reset();
+    }
+    else if (this->audioClient) {
         this->audioClient->Start();
     }
 }
@@ -1026,45 +1033,54 @@ HRESULT WasapiExclusiveOut::InitializeAudioClientWithEvent(
     return hr;
 }
 
-bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
-    /* assumes stateMutex is locked */
-    LogDebug("Configure called: nChannels=" + std::to_string(buffer->Channels()) + 
-             ", nSamplesPerSec=" + std::to_string(buffer->SampleRate()));
-
+bool WasapiExclusiveOut::CheckPreferencesChanged() {
     std::string currentOversampling = getPreferenceString<std::string>(prefs, PREF_SOXR_OVERSAMPLING, "No Scaling");
     std::string currentPreset = getPreferenceString<std::string>(prefs, PREF_SOXR_PRESET, "High (Default)");
     double currentHeadroom = prefs ? prefs->GetDouble(PREF_HEADROOM_DB, 0.0) : 0.0;
+    double currentBufferLength = prefs ? prefs->GetDouble(PREF_BUFFER_LENGTH_SECONDS, 1.0) : 1.0;
     int customPrecision = prefs ? prefs->GetInt(PREF_SOXR_CUSTOM_PRECISION, 20) : 20;
     double customPhase = prefs ? prefs->GetDouble(PREF_SOXR_CUSTOM_PHASE, 50.0) : 50.0;
     double customPassband = prefs ? prefs->GetDouble(PREF_SOXR_CUSTOM_PASSBAND_END, 0.913) : 0.913;
     double customStopband = prefs ? prefs->GetDouble(PREF_SOXR_CUSTOM_STOPBAND_BEGIN, 1.0) : 1.0;
     bool customDoublePrec = prefs ? prefs->GetBool(PREF_SOXR_CUSTOM_DOUBLE_PRECISION, false) : false;
 
-    bool prefsChanged = false;
     if (this->cachedOversampling != currentOversampling ||
         this->cachedSoxrPreset != currentPreset ||
         this->cachedHeadroom != currentHeadroom ||
+        this->cachedBufferLength != currentBufferLength ||
         this->cachedCustomPrecision != customPrecision ||
         this->cachedCustomPhase != customPhase ||
         this->cachedCustomPassband != customPassband ||
         this->cachedCustomStopband != customStopband ||
         this->cachedCustomDoublePrec != customDoublePrec)
     {
-        prefsChanged = true;
         this->cachedOversampling = currentOversampling;
         this->cachedSoxrPreset = currentPreset;
         this->cachedHeadroom = currentHeadroom;
+        this->cachedBufferLength = currentBufferLength;
         this->cachedCustomPrecision = customPrecision;
         this->cachedCustomPhase = customPhase;
         this->cachedCustomPassband = customPassband;
         this->cachedCustomStopband = customStopband;
         this->cachedCustomDoublePrec = customDoublePrec;
+        return true;
+    }
+    return false;
+}
+
+bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
+    /* assumes stateMutex is locked */
+    LogDebug("Configure called: nChannels=" + std::to_string(buffer->Channels()) + 
+             ", nSamplesPerSec=" + std::to_string(buffer->SampleRate()));
+
+    if (this->CheckPreferencesChanged()) {
+        this->pendingReconfig = true;
     }
 
     if (this->audioClient &&
         this->configuredInputChannels == buffer->Channels() &&
         this->rate == buffer->SampleRate() &&
-        !prefsChanged)
+        !this->pendingReconfig)
     {
         LogDebug("Configure early return (already configured and prefs unchanged)");
         return true;
@@ -1076,12 +1092,14 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     int cachedInputRate = this->rate;
     int cachedConfiguredRate = this->configuredSampleRate;
     int cachedConfiguredChannels = this->configuredChannels;
-    bool canUseCache = (cachedInputRate == buffer->SampleRate() && 
+    bool canUseCache = (!this->pendingReconfig &&
+                        cachedInputRate == buffer->SampleRate() && 
                         cachedWf.Format.nChannels == this->configuredChannels && 
                         cachedWf.Format.nSamplesPerSec > 0 &&
                         cachedConfiguredChannels > 0);
 
     this->Reset();
+    this->pendingReconfig = false;
     this->InitializeAudioClient();
 
     if (!this->audioClient) {
