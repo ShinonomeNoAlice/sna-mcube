@@ -967,18 +967,50 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 // VstChain
 // ---------------------------------------------------------
 
+LRESULT CALLBACK VstChain::ChainWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_NCCREATE) {
+        CREATESTRUCT* cs = (CREATESTRUCT*)lParam;
+        SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
+        return TRUE;
+    }
+
+    VstChain* chain = (VstChain*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
+    if (uMsg == (WM_USER + 103)) {
+        SampleRateChangeRequest* req = (SampleRateChangeRequest*)wParam;
+        if (req && chain) {
+            LogDebug("Sample rate / block size update dispatched to WatchThread via msgHwnd");
+            chain->SetSampleRateAndBlockSize(req->sampleRate, req->blockSize);
+            if (req->completionEvent) {
+                SetEvent(req->completionEvent);
+            }
+        }
+        return 0;
+    }
+
+    if (uMsg == (WM_USER + 101)) {
+        if (chain) {
+            LogDebug("Initial config load triggered via msgHwnd!");
+            chain->ReloadConfig();
+        }
+        return 0;
+    }
+
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
 VstChain::VstChain(const std::string& tomlConfigPath) : configPath(tomlConfigPath) {
     LogDebug("VstChain constructor for path: " + tomlConfigPath);
     hostThreadRunning = true;
     hostThread = std::thread(&VstChain::WatchThread, this);
     
-    // Wait for hostThreadId to be populated by the newly spawned thread
-    while (hostThreadId == 0) {
+    // Wait for hostThreadId and msgHwnd to be populated by the newly spawned thread
+    while (hostThreadId == 0 || msgHwnd == nullptr) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     
-    // Trigger the initial TOML config load on the STA thread
-    PostThreadMessageW(hostThreadId, WM_USER + 101, 0, 0);
+    // Trigger the initial TOML config load on the STA thread via message-only HWND
+    PostMessageW(msgHwnd, WM_USER + 101, 0, 0);
 }
 
 VstChain::~VstChain() {
@@ -1123,6 +1155,15 @@ void VstChain::WatchThread() {
     bool shouldUninit = SUCCEEDED(hr) || hr == S_FALSE;
     LogDebug("CoInitializeEx (APARTMENTTHREADED) called, result: " + std::to_string(hr));
 
+    // Create message-only window for receiving thread-safe commands even during modal move/resize loops
+    WNDCLASSW wcMsg = { 0 };
+    wcMsg.lpfnWndProc = VstChain::ChainWindowProc;
+    wcMsg.hInstance = GetModuleHandle(nullptr);
+    wcMsg.lpszClassName = L"VstChainMsgWindow";
+    RegisterClassW(&wcMsg);
+
+    this->msgHwnd = CreateWindowExW(0, L"VstChainMsgWindow", nullptr, 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, GetModuleHandle(nullptr), this);
+
     // Force creation of the message queue for this thread
     MSG msg;
     PeekMessage(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
@@ -1150,20 +1191,6 @@ void VstChain::WatchThread() {
                     LogDebug("Config file change detected!");
                     lastData = newData;
                     ReloadConfig();
-                }
-            }
-        }
-        else if (msg.message == (WM_USER + 101)) {
-            LogDebug("Initial config load triggered!");
-            ReloadConfig();
-        }
-        else if (msg.message == (WM_USER + 103)) {
-            SampleRateChangeRequest* req = (SampleRateChangeRequest*)msg.wParam;
-            if (req) {
-                LogDebug("Sample rate / block size update dispatched to WatchThread STA");
-                this->SetSampleRateAndBlockSize(req->sampleRate, req->blockSize);
-                if (req->completionEvent) {
-                    SetEvent(req->completionEvent);
                 }
             }
         }
@@ -1203,6 +1230,11 @@ void VstChain::WatchThread() {
 
     KillTimer(nullptr, timerId);
 
+    if (this->msgHwnd) {
+        DestroyWindow(this->msgHwnd);
+        this->msgHwnd = nullptr;
+    }
+
     // Clear plugins under lock before CoUninitialize
     {
         std::lock_guard<std::mutex> lock(chainMutex);
@@ -1219,15 +1251,17 @@ void VstChain::WatchThread() {
 
 void VstChain::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
     if (hostThreadId != 0 && GetCurrentThreadId() != hostThreadId) {
-        SampleRateChangeRequest req;
-        req.sampleRate = sampleRate;
-        req.blockSize = blockSize;
-        req.completionEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-        
-        if (req.completionEvent) {
-            PostThreadMessage(hostThreadId, WM_USER + 103, (WPARAM)&req, 0);
-            WaitForSingleObject(req.completionEvent, 5000);
-            CloseHandle(req.completionEvent);
+        if (this->msgHwnd) {
+            SampleRateChangeRequest req;
+            req.sampleRate = sampleRate;
+            req.blockSize = blockSize;
+            req.completionEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+            
+            if (req.completionEvent) {
+                PostMessageW(this->msgHwnd, WM_USER + 103, (WPARAM)&req, 0);
+                WaitForSingleObject(req.completionEvent, 5000);
+                CloseHandle(req.completionEvent);
+            }
         }
         return;
     }

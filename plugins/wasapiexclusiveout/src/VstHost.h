@@ -141,8 +141,9 @@ private:
     std::thread hostThread;
     std::atomic<bool> hostThreadRunning{false};
     DWORD hostThreadId = 0;
+    HWND msgHwnd = nullptr;
 
-
+    static LRESULT CALLBACK ChainWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
     // Planar buffers for VST processing
     std::vector<std::vector<float>> planarChannels;
