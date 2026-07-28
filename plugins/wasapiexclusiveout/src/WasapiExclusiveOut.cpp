@@ -422,6 +422,14 @@ WasapiExclusiveOut::WasapiExclusiveOut()
 , configuredSampleRate(0)
 , configuredChannels(0)
 , configuredInputChannels(0)
+, cachedOversampling("")
+, cachedSoxrPreset("")
+, cachedHeadroom(0.0)
+, cachedCustomPrecision(0)
+, cachedCustomPhase(0.0)
+, cachedCustomPassband(0.0)
+, cachedCustomStopband(0.0)
+, cachedCustomDoublePrec(false)
 , resampler(nullptr)
 , deviceChanged(false)
 , mmcssHandle(nullptr)
@@ -1023,11 +1031,42 @@ bool WasapiExclusiveOut::Configure(IBuffer *buffer) {
     LogDebug("Configure called: nChannels=" + std::to_string(buffer->Channels()) + 
              ", nSamplesPerSec=" + std::to_string(buffer->SampleRate()));
 
+    std::string currentOversampling = getPreferenceString<std::string>(prefs, PREF_SOXR_OVERSAMPLING, "No Scaling");
+    std::string currentPreset = getPreferenceString<std::string>(prefs, PREF_SOXR_PRESET, "High (Default)");
+    double currentHeadroom = prefs ? prefs->GetDouble(PREF_HEADROOM_DB, 0.0) : 0.0;
+    int customPrecision = prefs ? prefs->GetInt(PREF_SOXR_CUSTOM_PRECISION, 20) : 20;
+    double customPhase = prefs ? prefs->GetDouble(PREF_SOXR_CUSTOM_PHASE, 50.0) : 50.0;
+    double customPassband = prefs ? prefs->GetDouble(PREF_SOXR_CUSTOM_PASSBAND_END, 0.913) : 0.913;
+    double customStopband = prefs ? prefs->GetDouble(PREF_SOXR_CUSTOM_STOPBAND_BEGIN, 1.0) : 1.0;
+    bool customDoublePrec = prefs ? prefs->GetBool(PREF_SOXR_CUSTOM_DOUBLE_PRECISION, false) : false;
+
+    bool prefsChanged = false;
+    if (this->cachedOversampling != currentOversampling ||
+        this->cachedSoxrPreset != currentPreset ||
+        this->cachedHeadroom != currentHeadroom ||
+        this->cachedCustomPrecision != customPrecision ||
+        this->cachedCustomPhase != customPhase ||
+        this->cachedCustomPassband != customPassband ||
+        this->cachedCustomStopband != customStopband ||
+        this->cachedCustomDoublePrec != customDoublePrec)
+    {
+        prefsChanged = true;
+        this->cachedOversampling = currentOversampling;
+        this->cachedSoxrPreset = currentPreset;
+        this->cachedHeadroom = currentHeadroom;
+        this->cachedCustomPrecision = customPrecision;
+        this->cachedCustomPhase = customPhase;
+        this->cachedCustomPassband = customPassband;
+        this->cachedCustomStopband = customStopband;
+        this->cachedCustomDoublePrec = customDoublePrec;
+    }
+
     if (this->audioClient &&
         this->configuredInputChannels == buffer->Channels() &&
-        this->rate == buffer->SampleRate())
+        this->rate == buffer->SampleRate() &&
+        !prefsChanged)
     {
-        LogDebug("Configure early return (already configured)");
+        LogDebug("Configure early return (already configured and prefs unchanged)");
         return true;
     }
 

@@ -114,6 +114,14 @@ class WasapiExclusiveOut : public IOutput {
         int configuredSampleRate;
         int configuredChannels;
         int configuredInputChannels;
+        std::string cachedOversampling;
+        std::string cachedSoxrPreset;
+        double cachedHeadroom;
+        int cachedCustomPrecision;
+        double cachedCustomPhase;
+        double cachedCustomPassband;
+        double cachedCustomStopband;
+        bool cachedCustomDoublePrec;
         float headroomMultiplier;
         void* resampler;
         std::vector<float> resampleBuffer;
