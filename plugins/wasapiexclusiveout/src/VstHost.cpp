@@ -1157,6 +1157,16 @@ void VstChain::WatchThread() {
             LogDebug("Initial config load triggered!");
             ReloadConfig();
         }
+        else if (msg.message == (WM_USER + 103)) {
+            SampleRateChangeRequest* req = (SampleRateChangeRequest*)msg.wParam;
+            if (req) {
+                LogDebug("Sample rate / block size update dispatched to WatchThread STA");
+                this->SetSampleRateAndBlockSize(req->sampleRate, req->blockSize);
+                if (req->completionEvent) {
+                    SetEvent(req->completionEvent);
+                }
+            }
+        }
         else {
             if (msg.message == WM_KEYDOWN) {
                 bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -1208,6 +1218,20 @@ void VstChain::WatchThread() {
 }
 
 void VstChain::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
+    if (hostThreadId != 0 && GetCurrentThreadId() != hostThreadId) {
+        SampleRateChangeRequest req;
+        req.sampleRate = sampleRate;
+        req.blockSize = blockSize;
+        req.completionEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        
+        if (req.completionEvent) {
+            PostThreadMessage(hostThreadId, WM_USER + 103, (WPARAM)&req, 0);
+            WaitForSingleObject(req.completionEvent, 5000);
+            CloseHandle(req.completionEvent);
+        }
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(chainMutex);
     currentSampleRate = sampleRate;
     int neededBlock = blockSize * 2;

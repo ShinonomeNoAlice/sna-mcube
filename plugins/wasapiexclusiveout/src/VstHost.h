@@ -36,6 +36,12 @@ void LogDebug(const std::string& message);
 
 class VstChain;
 
+struct SampleRateChangeRequest {
+    double sampleRate;
+    int blockSize;
+    HANDLE completionEvent;
+};
+
 class VstPlugin {
 public:
     VstPlugin(const std::string& path, const std::string& presetPath, bool showUi, int orderIndex, const std::string& customTitle, VstChain* chain);
