@@ -804,6 +804,68 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
     }
     
+    if (uMsg == WM_NCLBUTTONDOWN) {
+        switch (wParam) {
+            case HTMINBUTTON:
+                ShowWindow(hwnd, SW_MINIMIZE);
+                return 0;
+            case HTMAXBUTTON:
+                if (IsZoomed(hwnd)) {
+                    ShowWindow(hwnd, SW_RESTORE);
+                } else {
+                    ShowWindow(hwnd, SW_MAXIMIZE);
+                }
+                return 0;
+            case HTCLOSE:
+                DestroyWindow(hwnd);
+                return 0;
+            case HTSYSMENU:
+                return 0;
+        }
+    }
+
+    if (uMsg == WM_NCRBUTTONDOWN) {
+        return 0;
+    }
+
+    if (uMsg == WM_NCLBUTTONDBLCLK) {
+        if (wParam == HTSYSMENU) {
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        if (wParam == HTCAPTION) {
+            if (IsZoomed(hwnd)) {
+                ShowWindow(hwnd, SW_RESTORE);
+            } else {
+                ShowWindow(hwnd, SW_MAXIMIZE);
+            }
+            return 0;
+        }
+    }
+
+    if (uMsg == WM_SYSCOMMAND) {
+        WPARAM cmd = (wParam & 0xFFF0);
+        if (cmd == SC_MINIMIZE) {
+            ShowWindow(hwnd, SW_MINIMIZE);
+            return 0;
+        }
+        if (cmd == SC_MAXIMIZE) {
+            ShowWindow(hwnd, SW_MAXIMIZE);
+            return 0;
+        }
+        if (cmd == SC_RESTORE) {
+            ShowWindow(hwnd, SW_RESTORE);
+            return 0;
+        }
+        if (cmd == SC_CLOSE) {
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        if (cmd == SC_KEYMENU || cmd == SC_MOUSEMENU) {
+            return 0;
+        }
+    }
+    
     if (uMsg == WM_SETFOCUS) {
         VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
         if (plugin && plugin->view) {
