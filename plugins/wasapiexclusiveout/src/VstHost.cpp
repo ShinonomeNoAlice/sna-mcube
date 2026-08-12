@@ -1039,6 +1039,14 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
     }
 
     if (uMsg == WM_CLOSE) {
+        VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        if (plugin) {
+            if (plugin->GetChain()) {
+                plugin->GetChain()->UpdatePluginShowUi(plugin, false);
+            } else {
+                plugin->SetShowUi(false);
+            }
+        }
         DestroyWindow(hwnd);
         return 0;
     }
@@ -1046,6 +1054,7 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
         if (plugin) {
             LogDebug("WM_DESTROY received. Removing view...");
+            plugin->SetShowUi(false);
             plugin->viewAttached = false;
             if (plugin->view) {
                 plugin->view->setFrame(nullptr);
@@ -1168,18 +1177,44 @@ void VstChain::SavePluginState(VstPlugin* plugin) {
     }
 }
 
+void VstChain::UpdatePluginShowUi(VstPlugin* plugin, bool showUi) {
+    if (!plugin) return;
+    plugin->SetShowUi(showUi);
+    try {
+        if (!configPath.empty() && std::filesystem::exists(configPath)) {
+            toml::table config = toml::parse_file(configPath);
+            auto chain = config["chain"].as_array();
+            if (chain && (plugin->GetOrderIndex() - 1) < (int)chain->size()) {
+                auto& node = (*chain)[plugin->GetOrderIndex() - 1];
+                auto& tbl = *node.as_table();
+                tbl.insert_or_assign("show_ui", showUi);
+                
+                std::ofstream ofs(configPath);
+                if (ofs) {
+                    ofs << config;
+                    ofs.close();
+                    LogInfo("[VST] TOML config updated show_ui=" + std::to_string(showUi) + " for " + plugin->GetPath());
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        LogError("[VST] Failed to update show_ui in TOML: " + std::string(e.what()));
+    }
+}
+
 void VstChain::ReloadConfig() {
     LogDebug("VstChain::ReloadConfig() start");
-    std::lock_guard<std::mutex> lock(chainMutex);
 
     if (configPath.empty()) {
         LogWarning("[VST] Config path is empty, clearing plugins");
+        std::lock_guard<std::mutex> lock(chainMutex);
         plugins.clear();
         return;
     }
 
     if (!std::filesystem::exists(configPath)) {
         LogInfo("[VST] Config file does not exist, clearing plugins: " + configPath);
+        std::lock_guard<std::mutex> lock(chainMutex);
         plugins.clear();
         return;
     }
@@ -1250,10 +1285,14 @@ void VstChain::ReloadConfig() {
             }
             
             // Remaining old plugins are automatically cleaned up when old plugins vector is replaced
-            plugins = std::move(newPlugins);
+            {
+                std::lock_guard<std::mutex> lock(chainMutex);
+                plugins = std::move(newPlugins);
+            }
             LogInfo("[VST] Config delta reload finished successfully for " + configPath);
         } else {
             LogWarning("[VST] No chain array found in TOML (" + configPath + "), clearing plugins");
+            std::lock_guard<std::mutex> lock(chainMutex);
             plugins.clear();
         }
     } catch (const std::exception& e) {
@@ -1392,8 +1431,21 @@ void VstChain::SetSampleRateAndBlockSize(double sampleRate, int blockSize) {
 }
 
 void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels, int targetBlockSize) {
-    std::lock_guard<std::mutex> lock(chainMutex);
-    if (plugins.empty() || numChannels == 0 || numSamples == 0) return;
+    if (numChannels == 0 || numSamples == 0) return;
+
+    std::vector<VstPlugin*> activePlugins;
+    {
+        std::lock_guard<std::mutex> lock(chainMutex);
+        if (plugins.empty()) return;
+        activePlugins.reserve(plugins.size());
+        for (auto& p : plugins) {
+            if (p && !p->IsBypassed()) {
+                activePlugins.push_back(p.get());
+            }
+        }
+    }
+    
+    if (activePlugins.empty()) return;
     
     if (planarChannels.size() != numChannels) {
         planarChannels.resize(numChannels);
@@ -1417,10 +1469,7 @@ void VstChain::Process(float* interleavedBuffer, int numSamples, int numChannels
     }
     
     // Process chain
-    for (auto& p : plugins) {
-        if (p->IsBypassed()) {
-            continue;
-        }
+    for (VstPlugin* p : activePlugins) {
         if (targetBlockSize > 0 && numSamples > targetBlockSize) {
             int offset = 0;
             while (offset < numSamples) {

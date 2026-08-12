@@ -66,8 +66,10 @@ public:
     bool IsAutoloadEnabled() const { return autoloadEnabled; }
     void SetAutoloadEnabled(bool b) { autoloadEnabled = b; }
     bool GetShowUi() const { return showUi; }
+    void SetShowUi(bool show) { showUi = show; }
     bool GetAutoFocus() const { return autoFocus; }
     HWND GetHwnd() const { return hwnd; }
+    VstChain* GetChain() const { return chain; }
     std::string GetPath() const { return dllPath; }
     std::string GetPresetPath() const { return presetPath; }
     void SetPresetPath(const std::string& path) { presetPath = path; }
@@ -128,6 +130,7 @@ public:
     ~VstChain();
     
     void SavePluginState(VstPlugin* plugin);
+    void UpdatePluginShowUi(VstPlugin* plugin, bool showUi);
     std::string GetConfigPath() const { return configPath; }
 
     void Process(float* interleavedBuffer, int numSamples, int numChannels, int targetBlockSize = 0);
