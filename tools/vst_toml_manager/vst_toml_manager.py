@@ -168,27 +168,20 @@ class VstManagerApp(App):
         background: #0e0e10;
         border: solid #27272a;
         height: 1fr;
+        min-height: 4;
     }
     
     ListItem {
-        padding: 1;
+        padding: 0 1;
         margin: 0;
+        height: 1;
         background: #0e0e10;
     }
-    
-    ListItem:focus {
-        background: #2563eb;
-        color: #ffffff;
-    }
 
-    ListItem.-highlight {
-        background: #1e3a8a;
-        color: #ffffff;
-    }
-
-    ListItem.-highlight:focus {
-        background: #2563eb;
-        color: #ffffff;
+    ListItem Label {
+        padding: 0;
+        margin: 0;
+        height: 1;
     }
     
     #status-bar {
@@ -207,33 +200,40 @@ class VstManagerApp(App):
         layout: horizontal;
     }
 
-    #group-edit-actions {
+    #vst-action-row Button {
         width: 1fr;
-        layout: horizontal;
-        align: left middle;
-    }
-
-    #group-move-actions {
-        width: 1fr;
-        layout: horizontal;
-        align: right middle;
-    }
-
-    #group-edit-actions Button {
-        width: 14;
         height: 3;
         margin-right: 1;
+        content-align: center middle;
+        text-align: center;
     }
 
-    #group-move-actions Button {
-        width: 16;
+    #vst-action-row Button:last-child {
+        margin-right: 0;
+    }
+
+    #preset-action-row {
         height: 3;
-        margin-left: 1;
+        margin-top: 1;
+        width: 100%;
+        layout: horizontal;
+    }
+
+    #preset-action-row Button {
+        width: 1fr;
+        height: 3;
+        margin-right: 1;
+        content-align: center middle;
+        text-align: center;
+    }
+
+    #preset-action-row Button:last-child {
+        margin-right: 0;
     }
     
     #right-panel Button {
-        width: 100%;
-        margin-top: 1;
+        content-align: center middle;
+        text-align: center;
     }
     
     #preset-input-container {
@@ -404,24 +404,23 @@ class VstManagerApp(App):
                 yield Label("VST PLUGIN CHAIN", classes="panel-header")
                 yield DataTable()
                 with Horizontal(id="vst-action-row"):
-                    with Horizontal(id="group-edit-actions"):
-                        yield Button("Add (A)", id="btn-add-vst")
-                        yield Button("Edit (E)", id="btn-edit-vst")
-                        yield Button("Delete (D)", id="btn-delete-vst")
-                    with Horizontal(id="group-move-actions"):
-                        yield Button("Move Up (U)", id="btn-up")
-                        yield Button("Move Down (N)", id="btn-down")
+                    yield Button("Add (A)", id="btn-add-vst")
+                    yield Button("Edit (E)", id="btn-edit-vst")
+                    yield Button("Delete (D)", id="btn-delete-vst")
+                    yield Button("Move Up (U)", id="btn-up")
+                    yield Button("Move Down (N)", id="btn-down")
             
             # Right Panel: Presets Management
             with Vertical(classes="panel", id="right-panel"):
                 yield Label("CHAIN PRESETS", classes="panel-header")
                 yield ListView(id="list-presets")
-                yield Button("Load Selected Preset", id="btn-load-preset")
+                with Horizontal(id="preset-action-row"):
+                    yield Button("Load Preset", id="btn-load-preset")
+                    yield Button("Delete Preset", id="btn-delete-preset")
                 with Vertical(id="preset-input-container"):
                     yield Label("New Preset Name")
                     yield Input(placeholder="e.g. Low End Focus", id="input-preset-name")
-                    yield Button("Save Current as Preset", id="btn-save-preset")
-                yield Button("Delete Selected Preset", id="btn-delete-preset")
+                    yield Button("Save Preset", id="btn-save-preset")
 
         yield Label(f"Config path: {TOML_PATH}", id="status-bar")
         yield Footer()
