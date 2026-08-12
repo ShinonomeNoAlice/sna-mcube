@@ -1054,7 +1054,11 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         VstPlugin* plugin = (VstPlugin*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
         if (plugin) {
             LogDebug("WM_DESTROY received. Removing view...");
-            plugin->SetShowUi(false);
+            if (plugin->GetChain()) {
+                plugin->GetChain()->UpdatePluginShowUi(plugin, false);
+            } else {
+                plugin->SetShowUi(false);
+            }
             plugin->viewAttached = false;
             if (plugin->view) {
                 plugin->view->setFrame(nullptr);
@@ -1184,16 +1188,28 @@ void VstChain::UpdatePluginShowUi(VstPlugin* plugin, bool showUi) {
         if (!configPath.empty() && std::filesystem::exists(configPath)) {
             toml::table config = toml::parse_file(configPath);
             auto chain = config["chain"].as_array();
-            if (chain && (plugin->GetOrderIndex() - 1) < (int)chain->size()) {
-                auto& node = (*chain)[plugin->GetOrderIndex() - 1];
-                auto& tbl = *node.as_table();
-                tbl.insert_or_assign("show_ui", showUi);
-                
-                std::ofstream ofs(configPath);
-                if (ofs) {
-                    ofs << config;
-                    ofs.close();
-                    LogInfo("[VST] TOML config updated show_ui=" + std::to_string(showUi) + " for " + plugin->GetPath());
+            if (chain) {
+                bool updated = false;
+                for (auto&& node : *chain) {
+                    if (auto tbl = node.as_table()) {
+                        std::string path = (*tbl)["path"].value_or<std::string>("");
+                        if (path == plugin->GetPath()) {
+                            bool currentShowUi = (*tbl)["show_ui"].value_or<bool>(true);
+                            if (currentShowUi != showUi) {
+                                tbl->insert_or_assign("show_ui", showUi);
+                                updated = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (updated) {
+                    std::ofstream ofs(configPath);
+                    if (ofs) {
+                        ofs << config;
+                        ofs.close();
+                        LogInfo("[VST] TOML config updated show_ui=" + std::to_string(showUi) + " for " + plugin->GetPath());
+                    }
                 }
             }
         }
