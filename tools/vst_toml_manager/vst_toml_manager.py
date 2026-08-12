@@ -176,12 +176,34 @@ class VstManagerApp(App):
         margin: 0;
         height: 1;
         background: #0e0e10;
+        color: #a1a1aa;
     }
 
     ListItem Label {
         padding: 0;
         margin: 0;
         height: 1;
+        color: #a1a1aa;
+    }
+
+    ListView > ListItem:focus,
+    ListView > ListItem.-highlight,
+    ListView > ListItem.--highlight,
+    ListView:focus > ListItem:focus,
+    ListView:focus > ListItem.-highlight,
+    ListView:focus > ListItem.--highlight {
+        background: #2563eb;
+        color: #ffffff;
+    }
+
+    ListView > ListItem:focus Label,
+    ListView > ListItem.-highlight Label,
+    ListView > ListItem.--highlight Label,
+    ListView:focus > ListItem:focus Label,
+    ListView:focus > ListItem.-highlight Label,
+    ListView:focus > ListItem.--highlight Label {
+        background: #2563eb;
+        color: #ffffff;
     }
     
     #status-bar {
@@ -202,6 +224,7 @@ class VstManagerApp(App):
 
     #vst-action-row Button {
         width: 1fr;
+        min-width: 0;
         height: 3;
         margin-right: 1;
         content-align: center middle;
@@ -221,6 +244,7 @@ class VstManagerApp(App):
 
     #preset-action-row Button {
         width: 1fr;
+        min-width: 0;
         height: 3;
         margin-right: 1;
         content-align: center middle;
@@ -232,11 +256,13 @@ class VstManagerApp(App):
     }
     
     #right-panel Button {
+        width: 100%;
         content-align: center middle;
         text-align: center;
     }
     
     #preset-input-container {
+        width: 100%;
         height: auto;
         margin-top: 1;
         border-top: solid #2e2e33;
@@ -244,8 +270,21 @@ class VstManagerApp(App):
     }
     
     #preset-input-container Label {
+        width: 100%;
         text-style: bold;
         color: #a1a1aa;
+    }
+
+    #preset-input-container Input {
+        width: 100%;
+    }
+
+    #btn-save-preset {
+        width: 100%;
+        margin-top: 1;
+        height: 3;
+        content-align: center middle;
+        text-align: center;
     }
 
     /* Modal Styling */
