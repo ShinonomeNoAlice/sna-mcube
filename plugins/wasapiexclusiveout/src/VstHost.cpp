@@ -745,9 +745,13 @@ void VstPlugin::CheckUiState(bool showUi) {
         }
 
         hwnd = CreateWindowEx(
-            0, wc.lpszClassName, wTitle.c_str(),
+            WS_EX_DLGMODALFRAME, wc.lpszClassName, wTitle.c_str(),
             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
             nullptr, nullptr, wc.hInstance, this);
+            
+        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)nullptr);
+        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)nullptr);
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
             
         LogDebug("Window created, attaching view...");
         if (view) {
