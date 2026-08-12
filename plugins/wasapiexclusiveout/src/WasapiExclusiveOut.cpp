@@ -70,6 +70,7 @@
 #define PREF_SOXR_CUSTOM_DOUBLE_PRECISION "soxr_custom_double_precision"
 #define PREF_VST_ENABLED "vst_enabled"
 #define PREF_VST_BLOCK_SIZE "vst_block_size"
+#define PREF_VST_AUTO_FOCUS "vst_auto_focus"
 
 
 using Lock = std::unique_lock<std::recursive_mutex>;
@@ -315,6 +316,7 @@ extern "C" __declspec(dllexport) musik::core::sdk::ISchema* GetSchema() {
     schema->AddEnum("--- VST3 Host ---", { "---" }, "---");
     schema->AddBool(PREF_VST_ENABLED, true);
     schema->AddEnum(PREF_VST_BLOCK_SIZE, { "512", "1024", "2048", "4096", "Passthrough" }, "1024");
+    schema->AddBool(PREF_VST_AUTO_FOCUS, false);
 
     return schema;
 }

@@ -29,10 +29,14 @@
 using namespace Steinberg;
 using namespace Steinberg::Vst;
 
+#include <musikcore/sdk/IPreferences.h>
+
 void LogInfo(const std::string& message);
 void LogWarning(const std::string& message);
 void LogError(const std::string& message);
 void LogDebug(const std::string& message);
+
+extern musik::core::sdk::IPreferences* prefs;
 
 class VstChain;
 
@@ -47,14 +51,14 @@ public:
     VstPlugin(const std::string& path, const std::string& presetPath, bool showUi, int orderIndex, const std::string& customTitle, VstChain* chain);
     ~VstPlugin();
 
-    bool Load();
+    bool Load(bool autoFocus = false);
     void Unload();
 
     void Process(float** inputs, float** outputs, int numSamples, int numChannels);
     void SetSampleRateAndBlockSize(double sampleRate, int blockSize);
     void Reset();
     
-    void CheckUiState(bool showUi);
+    void CheckUiState(bool showUi, bool autoFocus = false);
     void OnParameterEdit(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue value);
 
     bool IsBypassed() const { return isBypassed; }
