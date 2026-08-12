@@ -703,9 +703,19 @@ void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int num
     }
 }
 
-void VstPlugin::CheckUiState(bool showUi, bool autoFocus) {
-    LogDebug("VstPlugin::CheckUiState(showUi=" + std::to_string(showUi) + ", autoFocus=" + std::to_string(autoFocus) + ") start");
-    if (showUi && !hwnd && controller) {
+void VstPlugin::CheckUiState(bool desiredShowUi, bool desiredAutoFocus) {
+    bool showUiChanged = (desiredShowUi != this->showUi);
+    bool autoFocusChanged = (desiredAutoFocus != this->autoFocus);
+    bool justCreated = false;
+
+    this->showUi = desiredShowUi;
+    this->autoFocus = desiredAutoFocus;
+
+    LogDebug("VstPlugin::CheckUiState(showUi=" + std::to_string(desiredShowUi) + 
+             ", autoFocus=" + std::to_string(desiredAutoFocus) + ") start");
+
+    if (desiredShowUi && !hwnd && controller) {
+        justCreated = true;
         LogDebug("Attempting to obtain IPlugView on UI thread...");
         Steinberg::IPlugView* rawView = controller->createView(Steinberg::Vst::ViewType::kEditor);
         if (rawView) {
@@ -792,34 +802,36 @@ void VstPlugin::CheckUiState(bool showUi, bool autoFocus) {
         SetTimer(hwnd, 1, 15, nullptr);
     }
     
-    if (showUi && hwnd) {
-        if (autoFocus) {
-            ShowWindow(hwnd, SW_SHOWNORMAL);
-            
-            DWORD dwCurrentThread = GetCurrentThreadId();
-            HWND hFgWnd = GetForegroundWindow();
-            DWORD dwFGThread = hFgWnd ? GetWindowThreadProcessId(hFgWnd, NULL) : 0;
-            if (dwFGThread != 0 && dwFGThread != dwCurrentThread) {
-                AttachThreadInput(dwCurrentThread, dwFGThread, TRUE);
-                SetForegroundWindow(hwnd);
-                BringWindowToTop(hwnd);
-                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-                AttachThreadInput(dwCurrentThread, dwFGThread, FALSE);
-            } else {
-                SetForegroundWindow(hwnd);
-                BringWindowToTop(hwnd);
-                SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-            }
+    if (desiredShowUi && hwnd) {
+        if (showUiChanged || autoFocusChanged || justCreated) {
+            if (desiredAutoFocus) {
+                ShowWindow(hwnd, SW_SHOWNORMAL);
+                
+                DWORD dwCurrentThread = GetCurrentThreadId();
+                HWND hFgWnd = GetForegroundWindow();
+                DWORD dwFGThread = hFgWnd ? GetWindowThreadProcessId(hFgWnd, NULL) : 0;
+                if (dwFGThread != 0 && dwFGThread != dwCurrentThread) {
+                    AttachThreadInput(dwCurrentThread, dwFGThread, TRUE);
+                    SetForegroundWindow(hwnd);
+                    BringWindowToTop(hwnd);
+                    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                    AttachThreadInput(dwCurrentThread, dwFGThread, FALSE);
+                } else {
+                    SetForegroundWindow(hwnd);
+                    BringWindowToTop(hwnd);
+                    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                }
 
-            if (view) {
-                view->onFocus(true);
+                if (view) {
+                    view->onFocus(true);
+                }
+            } else {
+                // Show window without stealing keyboard focus or forcing foreground activation
+                ShowWindow(hwnd, SW_SHOWNA);
+                SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
             }
-        } else {
-            // Show window without stealing keyboard focus or forcing foreground activation
-            ShowWindow(hwnd, SW_SHOWNA);
-            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         }
-    } else if (!showUi && hwnd) {
+    } else if (!desiredShowUi && hwnd) {
         LogDebug("Closing UI window...");
         DestroyWindow(hwnd);
         hwnd = nullptr;
@@ -1197,19 +1209,30 @@ void VstChain::ReloadConfig() {
                 
                 // If an existing plugin at index matches the dll path, reuse it!
                 if (i < plugins.size() && plugins[i] && plugins[i]->GetPath() == path) {
-                    LogDebug("Delta reload: Reusing plugin at index " + std::to_string(i) + ": " + path);
                     std::unique_ptr<VstPlugin> p = std::move(plugins[i]);
                     
-                    p->SetAutoloadEnabled(autoload);
-                    p->SetBypassed(bypass);
+                    if (p->IsAutoloadEnabled() != autoload) {
+                        LogInfo("[VST] Delta update: autoload changed to " + std::to_string(autoload) + " for " + path);
+                        p->SetAutoloadEnabled(autoload);
+                    }
+                    
+                    if (p->IsBypassed() != bypass) {
+                        LogInfo("[VST] Delta update: bypass changed to " + std::to_string(bypass) + " for " + path);
+                        p->SetBypassed(bypass);
+                    }
                     
                     // Reload preset if its path has changed
                     if (p->GetPresetPath() != preset) {
+                        LogInfo("[VST] Delta update: preset path changed to " + preset + " for " + path);
                         p->SetPresetPath(preset);
                         p->LoadPreset(preset);
                     }
                     
-                    p->CheckUiState(showUi, autoFocus);
+                    if (p->GetShowUi() != showUi || p->GetAutoFocus() != autoFocus || (showUi && p->GetHwnd() == nullptr)) {
+                        LogInfo("[VST] Delta update: UI state changed (showUi=" + std::to_string(showUi) + ", autoFocus=" + std::to_string(autoFocus) + ") for " + path);
+                        p->CheckUiState(showUi, autoFocus);
+                    }
+                    
                     newPlugins.push_back(std::move(p));
                 } else {
                     LogInfo("[VST] Delta reload: Instantiating new plugin at index " + std::to_string(i) + ": " + path);

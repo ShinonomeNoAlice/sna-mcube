@@ -65,6 +65,9 @@ public:
     void SetBypassed(bool b) { isBypassed = b; }
     bool IsAutoloadEnabled() const { return autoloadEnabled; }
     void SetAutoloadEnabled(bool b) { autoloadEnabled = b; }
+    bool GetShowUi() const { return showUi; }
+    bool GetAutoFocus() const { return autoFocus; }
+    HWND GetHwnd() const { return hwnd; }
     std::string GetPath() const { return dllPath; }
     std::string GetPresetPath() const { return presetPath; }
     void SetPresetPath(const std::string& path) { presetPath = path; }
@@ -79,6 +82,8 @@ private:
     std::string dllPath;
     std::string presetPath;
     bool showUiDesired;
+    bool showUi = false;
+    bool autoFocus = false;
 
     VST3::Hosting::Module::Ptr module;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
