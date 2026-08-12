@@ -598,10 +598,8 @@ void VstPlugin::LoadPreset(const std::string& path) {
 }
 
 void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int numChannels) {
-    if (!processor) return;
-    
-    if (isGuiTransitioning.load(std::memory_order_relaxed)) {
-        if (inputs != outputs && inputs && outputs) {
+    if (!processor || isAttachingView) {
+        if (inputs && outputs && inputs != outputs) {
             for (int c = 0; c < numChannels; ++c) {
                 if (inputs[c] && outputs[c]) {
                     memcpy(outputs[c], inputs[c], numSamples * sizeof(float));
@@ -727,7 +725,7 @@ void VstPlugin::CheckUiState(bool desiredShowUi, bool desiredAutoFocus) {
 
     if (desiredShowUi && !hwnd && controller) {
         justCreated = true;
-        SetGuiTransitioning(true);
+        isAttachingView = true;
         LogDebug("Attempting to obtain IPlugView on UI thread...");
         Steinberg::IPlugView* rawView = controller->createView(Steinberg::Vst::ViewType::kEditor);
         if (rawView) {
@@ -812,6 +810,7 @@ void VstPlugin::CheckUiState(bool desiredShowUi, bool desiredAutoFocus) {
 
         // Trigger WM_TIMER every 15ms (~66 FPS) to update VU meters and correlation indicators
         SetTimer(hwnd, 1, 15, nullptr);
+        isAttachingView = false;
     }
     
     if (desiredShowUi && hwnd) {
@@ -843,13 +842,10 @@ void VstPlugin::CheckUiState(bool desiredShowUi, bool desiredAutoFocus) {
                 SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
             }
         }
-        SetGuiTransitioning(false);
     } else if (!desiredShowUi && hwnd) {
         LogDebug("Closing UI window...");
-        SetGuiTransitioning(true);
         DestroyWindow(hwnd);
         hwnd = nullptr;
-        SetGuiTransitioning(false);
     }
 }
 
