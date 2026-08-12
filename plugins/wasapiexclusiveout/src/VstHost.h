@@ -65,6 +65,8 @@ public:
     void SetBypassed(bool b) { isBypassed = b; }
     bool IsAutoloadEnabled() const { return autoloadEnabled; }
     void SetAutoloadEnabled(bool b) { autoloadEnabled = b; }
+    bool IsGuiTransitioning() const { return isGuiTransitioning.load(std::memory_order_relaxed); }
+    void SetGuiTransitioning(bool b) { isGuiTransitioning.store(b, std::memory_order_release); }
     bool GetShowUi() const { return showUi; }
     void SetShowUi(bool show) { showUi = show; }
     bool GetAutoFocus() const { return autoFocus; }
@@ -86,6 +88,7 @@ private:
     bool showUiDesired;
     bool showUi = false;
     bool autoFocus = false;
+    std::atomic<bool> isGuiTransitioning{false};
 
     VST3::Hosting::Module::Ptr module;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;

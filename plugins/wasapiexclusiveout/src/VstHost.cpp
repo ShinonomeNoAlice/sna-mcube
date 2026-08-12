@@ -600,6 +600,17 @@ void VstPlugin::LoadPreset(const std::string& path) {
 void VstPlugin::Process(float** inputs, float** outputs, int numSamples, int numChannels) {
     if (!processor) return;
     
+    if (isGuiTransitioning.load(std::memory_order_relaxed)) {
+        if (inputs != outputs && inputs && outputs) {
+            for (int c = 0; c < numChannels; ++c) {
+                if (inputs[c] && outputs[c]) {
+                    memcpy(outputs[c], inputs[c], numSamples * sizeof(float));
+                }
+            }
+        }
+        return;
+    }
+    
     // Construct a stable and monotonic ProcessContext to feed visualizers/meters/clocks
     // with reliable timing info, preventing visual stutter or timing anomalies.
     ProcessContext context;
@@ -716,6 +727,7 @@ void VstPlugin::CheckUiState(bool desiredShowUi, bool desiredAutoFocus) {
 
     if (desiredShowUi && !hwnd && controller) {
         justCreated = true;
+        SetGuiTransitioning(true);
         LogDebug("Attempting to obtain IPlugView on UI thread...");
         Steinberg::IPlugView* rawView = controller->createView(Steinberg::Vst::ViewType::kEditor);
         if (rawView) {
@@ -831,10 +843,13 @@ void VstPlugin::CheckUiState(bool desiredShowUi, bool desiredAutoFocus) {
                 SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
             }
         }
+        SetGuiTransitioning(false);
     } else if (!desiredShowUi && hwnd) {
         LogDebug("Closing UI window...");
+        SetGuiTransitioning(true);
         DestroyWindow(hwnd);
         hwnd = nullptr;
+        SetGuiTransitioning(false);
     }
 }
 
