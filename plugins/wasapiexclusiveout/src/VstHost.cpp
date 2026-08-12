@@ -790,8 +790,26 @@ void VstPlugin::CheckUiState(bool showUi) {
 
         // Trigger WM_TIMER every 15ms (~66 FPS) to update VU meters and correlation indicators
         SetTimer(hwnd, 1, 15, nullptr);
+    }
+    
+    if (showUi && hwnd) {
+        ShowWindow(hwnd, SW_SHOWNORMAL);
+        
+        DWORD dwCurrentThread = GetCurrentThreadId();
+        HWND hFgWnd = GetForegroundWindow();
+        DWORD dwFGThread = hFgWnd ? GetWindowThreadProcessId(hFgWnd, NULL) : 0;
+        if (dwFGThread != 0 && dwFGThread != dwCurrentThread) {
+            AttachThreadInput(dwCurrentThread, dwFGThread, TRUE);
+            SetForegroundWindow(hwnd);
+            BringWindowToTop(hwnd);
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            AttachThreadInput(dwCurrentThread, dwFGThread, FALSE);
+        } else {
+            SetForegroundWindow(hwnd);
+            BringWindowToTop(hwnd);
+            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        }
 
-        ShowWindow(hwnd, SW_SHOW);
         if (view) {
             view->onFocus(true);
         }
