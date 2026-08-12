@@ -933,7 +933,7 @@ LRESULT CALLBACK VstPlugin::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
 
     if (uMsg == WM_PAINT) {
         PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
+        BeginPaint(hwnd, &ps);
         EndPaint(hwnd, &ps);
         return 0;
     }
