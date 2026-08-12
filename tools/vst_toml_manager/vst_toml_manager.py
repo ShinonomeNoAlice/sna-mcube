@@ -255,12 +255,6 @@ class VstManagerApp(App):
         margin-right: 0;
     }
     
-    #right-panel Button {
-        width: 100%;
-        content-align: center middle;
-        text-align: center;
-    }
-    
     #preset-input-container {
         width: 100%;
         height: auto;
