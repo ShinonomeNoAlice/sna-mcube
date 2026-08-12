@@ -386,6 +386,8 @@ class VstManagerApp(App):
         try:
             with open(TOML_PATH, "w", encoding="utf-8") as f:
                 f.write(tomlkit.dumps(self.doc))
+            if TOML_PATH.exists():
+                self.last_mtime = TOML_PATH.stat().st_mtime
             self.check_preset_match()
             self.update_status_bar()
             if not silent:
@@ -434,9 +436,20 @@ class VstManagerApp(App):
         dt.add_column("VST3 Path", key="path")
         dt.add_column("Config path", key="preset")
         
+        self.last_mtime = TOML_PATH.stat().st_mtime if TOML_PATH.exists() else 0
         self.repopulate_table()
         self.rebuild_preset_list()
         self.update_status_bar()
+        self.set_interval(0.5, self.check_external_toml_changes)
+
+    def check_external_toml_changes(self) -> None:
+        if TOML_PATH.exists():
+            current_mtime = TOML_PATH.stat().st_mtime
+            if current_mtime > self.last_mtime:
+                self.last_mtime = current_mtime
+                self.load_toml_file()
+                self.repopulate_table()
+                self.update_status_bar()
 
     def repopulate_table(self):
         dt = self.query_one(DataTable)
